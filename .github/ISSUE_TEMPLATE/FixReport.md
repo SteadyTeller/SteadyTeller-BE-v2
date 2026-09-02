@@ -1,8 +1,8 @@
 ---
-name: "🐛 Bug Report"
-about: 버그를 제보합니다.
-title: "[Bug] "
-labels: 'bug'
+name: "🐛 Fix Report"
+about: 고칠 문제점 또는 버그를 제보합니다.
+title: "[Fix] "
+labels: 'fix'
 assignees: ''
 ---
 
