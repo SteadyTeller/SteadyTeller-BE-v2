@@ -34,6 +34,11 @@ spring:
     openai:
       api-key: ${OPENAI_API_KEY:default-key}
 
+app:
+  jwt:
+    secret: ${JWT_SECRET:c3RlYWR5dGVsbGVyLWRldmVsb3BtZW50LXNlY3JldC1rZXktMjAyNg==}
+    access-token-expiration-millis: ${JWT_ACCESS_TOKEN_EXPIRATION_MILLIS:3600000}
+
 ---
 spring:
   config:
@@ -57,3 +62,8 @@ spring:
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-token-expiration-millis: ${JWT_ACCESS_TOKEN_EXPIRATION_MILLIS:3600000}
