@@ -28,7 +28,7 @@ public class AuthController {
             @Valid @RequestBody MemberSignUpRequest request
     ) {
         return ResponseEntity.status(201).body(ApiResponse.success(
-                "íìê°ìì´ ìë£ëììµëë¤.",
+                "회원가입이 완료되었습니다.",
                 memberService.signUp(request)
         ));
     }
@@ -38,7 +38,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(
-                "ë¡ê·¸ì¸ì ì±ê³µíìµëë¤.",
+                "로그인에 성공했습니다.",
                 authService.login(request)
         ));
     }

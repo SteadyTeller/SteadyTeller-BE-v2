@@ -14,10 +14,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class LoginRequest {
 
-    @NotBlank(message = "ì´ë©ì¼ì íììëë¤.")
-    @Email(message = "ì¬ë°ë¥¸ ì´ë©ì¼ íìì´ ìëëë¤.")
+    @NotBlank(message = "이메일은 필수입니다.")
+    @Email(message = "올바른 이메일 형식이 아닙니다.")
     private String email;
 
-    @NotBlank(message = "ë¹ë°ë²í¸ë íììëë¤.")
+    @NotBlank(message = "비밀번호는 필수입니다.")
     private String password;
 }

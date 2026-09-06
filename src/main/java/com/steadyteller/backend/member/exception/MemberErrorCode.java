@@ -9,12 +9,12 @@ import org.springframework.http.HttpStatus;
 @AllArgsConstructor
 public enum MemberErrorCode implements ErrorCode {
 
-    MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "M001", "ì¡´ì¬íì§ ìë íììëë¤."),
-    DUPLICATE_EMAIL(HttpStatus.CONFLICT, "M002", "ì´ë¯¸ ê°ìë ì´ë©ì¼ìëë¤."),
-    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "M003", "ì´ë©ì¼ ëë ë¹ë°ë²í¸ê° ì¼ì¹íì§ ììµëë¤."),
-    AVAILABILITY_NOT_FOUND(HttpStatus.NOT_FOUND, "M004", "íìµ ê°ë¥ ìê°ì ì°¾ì ì ììµëë¤."),
-    INVALID_TIME_RANGE(HttpStatus.BAD_REQUEST, "M005", "ì¢ë£ ìê°ì ìì ìê°ë³´ë¤ ë¦ì´ì¼ í©ëë¤."),
-    AVAILABILITY_OVERLAP(HttpStatus.CONFLICT, "M006", "ê°ì ìì¼ì ê²¹ì¹ë íìµ ê°ë¥ ìê°ì´ ììµëë¤.");
+    MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "M001", "존재하지 않는 회원입니다."),
+    DUPLICATE_EMAIL(HttpStatus.CONFLICT, "M002", "이미 가입된 이메일입니다."),
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "M003", "이메일 또는 비밀번호가 일치하지 않습니다."),
+    AVAILABILITY_NOT_FOUND(HttpStatus.NOT_FOUND, "M004", "학습 가능 시간을 찾을 수 없습니다."),
+    INVALID_TIME_RANGE(HttpStatus.BAD_REQUEST, "M005", "종료 시간은 시작 시간보다 늦어야 합니다."),
+    AVAILABILITY_OVERLAP(HttpStatus.CONFLICT, "M006", "같은 요일에 겹치는 학습 가능 시간이 있습니다.");
 
     private final HttpStatus status;
     private final String code;

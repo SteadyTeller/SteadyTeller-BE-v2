@@ -13,9 +13,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class MemberUpdateRequest {
 
-    @Size(min = 1, max = 50, message = "ëë¤ìì 1ì ì´ì 50ì ì´íì¬ì¼ í©ëë¤.")
+    @Size(min = 1, max = 50, message = "닉네임은 1자 이상 50자 이하여야 합니다.")
     private String nickname;
 
-    @Size(min = 8, max = 64, message = "ë¹ë°ë²í¸ë 8ì ì´ì 64ì ì´íì¬ì¼ í©ëë¤.")
+    @Size(min = 8, max = 64, message = "비밀번호는 8자 이상 64자 이하여야 합니다.")
     private String password;
 }

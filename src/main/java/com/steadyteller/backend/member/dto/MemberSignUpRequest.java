@@ -15,15 +15,15 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class MemberSignUpRequest {
 
-    @NotBlank(message = "ì´ë©ì¼ì íììëë¤.")
-    @Email(message = "ì¬ë°ë¥¸ ì´ë©ì¼ íìì´ ìëëë¤.")
+    @NotBlank(message = "이메일은 필수입니다.")
+    @Email(message = "올바른 이메일 형식이 아닙니다.")
     private String email;
 
-    @NotBlank(message = "ë¹ë°ë²í¸ë íììëë¤.")
-    @Size(min = 8, max = 64, message = "ë¹ë°ë²í¸ë 8ì ì´ì 64ì ì´íì¬ì¼ í©ëë¤.")
+    @NotBlank(message = "비밀번호는 필수입니다.")
+    @Size(min = 8, max = 64, message = "비밀번호는 8자 이상 64자 이하여야 합니다.")
     private String password;
 
-    @NotBlank(message = "ëë¤ìì íììëë¤.")
-    @Size(max = 50, message = "ëë¤ìì 50ì ì´íì¬ì¼ í©ëë¤.")
+    @NotBlank(message = "닉네임은 필수입니다.")
+    @Size(max = 50, message = "닉네임은 50자 이하여야 합니다.")
     private String nickname;
 }

@@ -15,13 +15,13 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class AvailabilityRequest {
 
-    @NotNull(message = "ìì¼ì íììëë¤.")
+    @NotNull(message = "요일은 필수입니다.")
     private DayOfWeek dayOfWeek;
 
-    @NotNull(message = "ìì ìê°ì íììëë¤.")
+    @NotNull(message = "시작 시간은 필수입니다.")
     private LocalTime startTime;
 
-    @NotNull(message = "ì¢ë£ ìê°ì íììëë¤.")
+    @NotNull(message = "종료 시간은 필수입니다.")
     private LocalTime endTime;
 
     private Boolean enabled;
