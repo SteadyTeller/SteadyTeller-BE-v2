@@ -1,5 +1,9 @@
 package com.steadyteller.backend.global.config;
 
+import com.steadyteller.backend.global.security.jwt.JwtAuthenticationEntryPoint;
+import com.steadyteller.backend.global.security.jwt.JwtAuthenticationFilter;
+import com.steadyteller.backend.global.security.jwt.JwtTokenProvider;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -8,27 +12,32 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtTokenProvider jwtTokenProvider;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 // REST API이므로 CSRF 보안 비활성화
                 .csrf(AbstractHttpConfigurer::disable)
-                
+
                 // 기본 폼 로그인 및 Basic Auth 비활성화 (브라우저 기본 로그인 창 뜨는 것 방지)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
-                
+
                 // JWT를 사용할 것이므로 세션 상태를 STATELESS로 설정
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                
+
                 // H2 콘솔 접근을 위한 설정 (Iframe 허용)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
-                
+
                 // 권한 규칙 설정
                 .authorizeHttpRequests(auth -> auth
                         // Swagger UI 및 H2 콘솔은 인증 없이 누구나 접근 가능하도록 허용
@@ -39,9 +48,15 @@ public class SecurityConfig {
                                 "/h2-console/**",
                                 "/error"
                         ).permitAll()
-                        // 그 외의 모든 API 요청은 (일단 지금은) 모두 허용. 나중에 JWT 필터 적용 시 변경
-                        .anyRequest().permitAll()
-                );
+                        // 그 외의 모든 API 요청은 JWT 인증 필요
+                        .anyRequest().authenticated()
+                )
+
+                // 인증 실패 시 처리 (401)
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+
+                // JWT 인증 필터를 UsernamePasswordAuthenticationFilter 앞에 등록
+                .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

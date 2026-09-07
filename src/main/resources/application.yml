@@ -1,9 +1,13 @@
 spring:
   application:
     name: SteadyTeller-BE
-  
+
   profiles:
     active: dev
+
+# Member 도메인(로그인/토큰 발급)을 담당하는 팀원과 동일한 값을 공유해야 함 (HS256, subject=memberId 가정)
+jwt:
+  secret: ${JWT_SECRET:temporary-dev-secret-please-change-this-value-32-bytes-min}
 
 ---
 spring:
@@ -31,8 +35,12 @@ spring:
     show-sql: true
 
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:default-key}
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:default-key}
+        chat:
+          options:
+            model: gemini-3.6-flash
 
 ---
 spring:
@@ -55,5 +63,9 @@ spring:
     show-sql: false
 
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY}
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: gemini-3.6-flash
