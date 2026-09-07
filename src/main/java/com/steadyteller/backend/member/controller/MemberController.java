@@ -45,7 +45,7 @@ public class MemberController {
             @Valid @RequestBody MemberUpdateRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(
-                "íì ì ë³´ê° ìì ëììµëë¤.",
+                "회원 정보가 수정되었습니다.",
                 memberService.updateMember(memberId, request)
         ));
     }
@@ -53,7 +53,7 @@ public class MemberController {
     @DeleteMapping
     public ResponseEntity<ApiResponse<Void>> withdraw(@AuthenticationPrincipal Long memberId) {
         memberService.withdraw(memberId);
-        return ResponseEntity.ok(ApiResponse.success("íì íí´ê° ìë£ëììµëë¤.", null));
+        return ResponseEntity.ok(ApiResponse.success("회원 탈퇴가 완료되었습니다.", null));
     }
 
     @GetMapping("/learning-profile")
@@ -69,7 +69,7 @@ public class MemberController {
             @Valid @RequestBody LearningProfileUpdateRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(
-                "íìµ íë¡íì´ ìì ëììµëë¤.",
+                "학습 프로필이 수정되었습니다.",
                 learningProfileService.updateProfile(memberId, request)
         ));
     }
@@ -87,7 +87,7 @@ public class MemberController {
             @Valid @RequestBody AvailabilityRequest request
     ) {
         return ResponseEntity.status(201).body(ApiResponse.success(
-                "íìµ ê°ë¥ ìê°ì´ ë±ë¡ëììµëë¤.",
+                "학습 가능 시간이 등록되었습니다.",
                 availabilityService.createAvailability(memberId, request)
         ));
     }
@@ -99,7 +99,7 @@ public class MemberController {
             @Valid @RequestBody AvailabilityRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(
-                "íìµ ê°ë¥ ìê°ì´ ìì ëììµëë¤.",
+                "학습 가능 시간이 수정되었습니다.",
                 availabilityService.updateAvailability(memberId, availabilityId, request)
         ));
     }
@@ -110,6 +110,6 @@ public class MemberController {
             @PathVariable Long availabilityId
     ) {
         availabilityService.deleteAvailability(memberId, availabilityId);
-        return ResponseEntity.ok(ApiResponse.success("íìµ ê°ë¥ ìê°ì´ ì­ì ëììµëë¤.", null));
+        return ResponseEntity.ok(ApiResponse.success("학습 가능 시간이 삭제되었습니다.", null));
     }
 }
