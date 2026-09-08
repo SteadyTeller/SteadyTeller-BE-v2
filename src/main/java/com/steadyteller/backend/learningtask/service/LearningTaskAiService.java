@@ -5,6 +5,7 @@ import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.learningtask.dto.AiGeneratedTaskDto;
 import com.steadyteller.backend.learningtask.exception.LearningTaskErrorCode;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.ParameterizedTypeReference;
@@ -31,7 +32,17 @@ public class LearningTaskAiService {
         if (tasks == null || tasks.isEmpty()) {
             throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);
         }
+        if (tasks.stream().anyMatch(task -> task == null
+                || isBlank(task.title()) || isBlank(task.category()) || isBlank(task.subject())
+                || task.difficulty() == null || task.difficulty() < 1 || task.difficulty() > 5
+                || task.allocatedMinutes() == null || task.allocatedMinutes() <= 0)) {
+            throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);
+        }
         return tasks;
+    }
+
+    private boolean isBlank(String value) {
+        return Objects.isNull(value) || value.isBlank();
     }
 
     private String buildPrompt(MemberGoal goal) {

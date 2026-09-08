@@ -107,6 +107,9 @@ public class LearningTaskService {
         getOwnedGoal(memberId, goalId);
 
         List<LearningTaskCandidate> candidates = candidateStore.findByGoal(goalId);
+        if (candidates.isEmpty()) {
+            throw new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND);
+        }
         List<LearningTask> tasks = candidates.stream()
                 .map(candidate -> LearningTask.builder()
                         .goalId(goalId)
