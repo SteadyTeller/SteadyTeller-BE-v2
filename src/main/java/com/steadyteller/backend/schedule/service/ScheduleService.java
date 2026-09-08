@@ -8,6 +8,7 @@ import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
+import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * MemberGoal + 확정된 LearningTask 목록을 바탕으로 일자별 학습 스케줄을 생성한다 (설계 명세 4번).
+ * MemberGoal + 확정된 LearningTask 목록을 바탕으로 일자별 학습 스케줄을 생성/조회한다 (설계 명세 4번).
  */
 @Service
 @RequiredArgsConstructor
@@ -78,6 +79,30 @@ public class ScheduleService {
         scheduleItemRepository.saveAll(items);
 
         return ScheduleResponseDto.of(schedule, items);
+    }
+
+    public ScheduleResponseDto getSchedule(Long memberId, Long scheduleId) {
+        Schedule schedule = getOwnedSchedule(memberId, scheduleId);
+        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(scheduleId);
+        return ScheduleResponseDto.of(schedule, items);
+    }
+
+    public List<ScheduleSummaryDto> listSchedules(Long memberId, Long goalId) {
+        getOwnedGoal(memberId, goalId);
+        return scheduleRepository.findByGoalIdOrderByStartDateDesc(goalId).stream()
+                .map(schedule -> ScheduleSummaryDto.of(
+                        schedule, scheduleItemRepository.countByScheduleId(schedule.getId())
+                ))
+                .toList();
+    }
+
+    private Schedule getOwnedSchedule(Long memberId, Long scheduleId) {
+        Schedule schedule = scheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new CustomException(ScheduleErrorCode.SCHEDULE_NOT_FOUND));
+        if (!schedule.getMemberId().equals(memberId)) {
+            throw new CustomException(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
+        }
+        return schedule;
     }
 
     private MemberGoal getOwnedGoal(Long memberId, Long goalId) {

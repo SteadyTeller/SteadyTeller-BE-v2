@@ -16,11 +16,13 @@ import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.schedule.dto.DailyScheduleDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
+import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -168,6 +170,84 @@ class ScheduleServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
+    }
+
+    @Test
+    void getScheduleReturnsScheduleGroupedByDate() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+
+        ScheduleResponseDto response = scheduleService.getSchedule(memberId, 100L);
+
+        assertThat(response.scheduleId()).isEqualTo(100L);
+        assertThat(response.dailySchedules()).hasSize(1);
+    }
+
+    @Test
+    void getScheduleThrowsWhenNotFound() {
+        given(scheduleRepository.findById(100L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> scheduleService.getSchedule(1L, 100L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_NOT_FOUND);
+    }
+
+    @Test
+    void getScheduleThrowsWhenNotOwnedByMember() {
+        Schedule schedule = schedule(100L, 2L, 10L);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+
+        assertThatThrownBy(() -> scheduleService.getSchedule(1L, 100L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
+    }
+
+    @Test
+    void listSchedulesReturnsSummariesForGoal() {
+        Long memberId = 1L;
+        Long goalId = 10L;
+        MemberGoal goal = goal(memberId, List.of("MON"));
+        Schedule schedule = schedule(100L, memberId, goalId);
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
+        given(scheduleRepository.findByGoalIdOrderByStartDateDesc(goalId)).willReturn(List.of(schedule));
+        given(scheduleItemRepository.countByScheduleId(100L)).willReturn(3L);
+
+        List<ScheduleSummaryDto> result = scheduleService.listSchedules(memberId, goalId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).scheduleId()).isEqualTo(100L);
+        assertThat(result.get(0).totalItems()).isEqualTo(3L);
+    }
+
+    @Test
+    void listSchedulesReturnsEmptyListWhenGoalHasNoSchedules() {
+        Long memberId = 1L;
+        Long goalId = 10L;
+        MemberGoal goal = goal(memberId, List.of("MON"));
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
+        given(scheduleRepository.findByGoalIdOrderByStartDateDesc(goalId)).willReturn(List.of());
+
+        List<ScheduleSummaryDto> result = scheduleService.listSchedules(memberId, goalId);
+
+        assertThat(result).isEmpty();
+    }
+
+    private Schedule schedule(Long id, Long memberId, Long goalId) {
+        Schedule schedule = Schedule.create(memberId, goalId, LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 16));
+        ReflectionTestUtils.setField(schedule, "id", id);
+        return schedule;
+    }
+
+    private ScheduleItem scheduleItem(Long id, Schedule schedule, Long learningTaskId, String title,
+                                       LocalDate date, DayOfWeek dayOfWeek, int allocatedMinutes, int orderIndex) {
+        ScheduleItem item = ScheduleItem.create(schedule, learningTaskId, title, date, dayOfWeek, allocatedMinutes, orderIndex);
+        ReflectionTestUtils.setField(item, "id", id);
+        return item;
     }
 
     private MemberGoal goal(Long memberId, List<String> availableDays) {
