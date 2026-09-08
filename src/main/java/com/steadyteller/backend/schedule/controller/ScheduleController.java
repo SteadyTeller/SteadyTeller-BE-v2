@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,5 +51,14 @@ public class ScheduleController {
             @PathVariable Long scheduleId
     ) {
         return ResponseEntity.ok(ApiResponse.success(scheduleService.getSchedule(memberId, scheduleId)));
+    }
+
+    @DeleteMapping("/api/v1/schedules/{scheduleId}")
+    public ResponseEntity<ApiResponse<Void>> deleteSchedule(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long scheduleId
+    ) {
+        scheduleService.deleteSchedule(memberId, scheduleId);
+        return ResponseEntity.ok(ApiResponse.success("스케줄이 삭제되었습니다.", null));
     }
 }

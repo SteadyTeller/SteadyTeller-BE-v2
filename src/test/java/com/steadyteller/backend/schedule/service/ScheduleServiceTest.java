@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.steadyteller.backend.global.exception.CustomException;
@@ -235,6 +238,31 @@ class ScheduleServiceTest {
         List<ScheduleSummaryDto> result = scheduleService.listSchedules(memberId, goalId);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void deleteScheduleRemovesScheduleAndItsItems() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+
+        scheduleService.deleteSchedule(memberId, 100L);
+
+        verify(scheduleItemRepository, times(1)).deleteByScheduleId(100L);
+        verify(scheduleRepository, times(1)).delete(schedule);
+    }
+
+    @Test
+    void deleteScheduleThrowsWhenNotOwnedByMember() {
+        Schedule schedule = schedule(100L, 2L, 10L);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+
+        assertThatThrownBy(() -> scheduleService.deleteSchedule(1L, 100L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
+        verify(scheduleItemRepository, never()).deleteByScheduleId(org.mockito.ArgumentMatchers.anyLong());
+        verify(scheduleRepository, never()).delete(any(Schedule.class));
     }
 
     private Schedule schedule(Long id, Long memberId, Long goalId) {

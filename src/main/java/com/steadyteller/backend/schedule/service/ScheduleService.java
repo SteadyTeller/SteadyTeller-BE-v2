@@ -96,6 +96,13 @@ public class ScheduleService {
                 .toList();
     }
 
+    @Transactional
+    public void deleteSchedule(Long memberId, Long scheduleId) {
+        Schedule schedule = getOwnedSchedule(memberId, scheduleId);
+        scheduleItemRepository.deleteByScheduleId(scheduleId);
+        scheduleRepository.delete(schedule);
+    }
+
     private Schedule getOwnedSchedule(Long memberId, Long scheduleId) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new CustomException(ScheduleErrorCode.SCHEDULE_NOT_FOUND));
