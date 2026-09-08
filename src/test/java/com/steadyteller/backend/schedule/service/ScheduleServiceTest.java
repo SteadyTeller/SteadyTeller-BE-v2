@@ -130,6 +130,23 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void throwsWhenConfirmedTaskHasNonPositiveAllocatedMinutes() {
+        // 검토 단계에서 사용자가 후보를 직접 수정(PATCH)해 0 이하의 시간을 넣는 경우를 방어한다.
+        Long memberId = 1L;
+        Long goalId = 10L;
+        MemberGoal goal = goal(memberId, List.of("MON"));
+        LearningTask invalidTask = task(1L, "잘못된 태스크", 0);
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
+        given(learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING))
+                .willReturn(List.of(invalidTask));
+
+        assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.INVALID_LEARNING_TASK_DURATION);
+    }
+
+    @Test
     void throwsWhenAvailableDaysContainInvalidValue() {
         Long memberId = 1L;
         Long goalId = 10L;

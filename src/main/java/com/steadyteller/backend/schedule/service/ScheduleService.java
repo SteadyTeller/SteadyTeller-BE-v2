@@ -48,6 +48,7 @@ public class ScheduleService {
         if (confirmedTasks.isEmpty()) {
             throw new CustomException(ScheduleErrorCode.NO_CONFIRMED_TASKS);
         }
+        validateAllocatedMinutes(confirmedTasks);
 
         Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
         int dailyCapacityMinutes = goal.getDailyStudyHours() * 60;
@@ -88,6 +89,17 @@ public class ScheduleService {
             throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
         }
         return goal;
+    }
+
+    private void validateAllocatedMinutes(List<LearningTask> tasks) {
+        // LearningTask.allocatedMinutes는 AI 생성 시점(#1/PR #6)에 양수로 검증되지만,
+        // 검토 단계에서 사용자가 후보를 직접 수정/추가(PATCH, POST)할 때는 그 검증을 다시 거치지 않을 수 있다.
+        // 0 이하 값이 섞여 들어오면 배정 알고리즘이 하루에 태스크를 무한정 몰아넣는 등 결과가 왜곡되므로
+        // 스케줄링 시점에도 한 번 더 방어적으로 검증한다.
+        boolean hasInvalidDuration = tasks.stream().anyMatch(task -> task.getAllocatedMinutes() <= 0);
+        if (hasInvalidDuration) {
+            throw new CustomException(ScheduleErrorCode.INVALID_LEARNING_TASK_DURATION);
+        }
     }
 
     private LocalDate earliestStart(MemberGoal goal) {
