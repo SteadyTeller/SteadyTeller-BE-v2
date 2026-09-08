@@ -149,6 +149,85 @@ class ScheduleAiServiceTest {
     }
 
     @Test
+    void adoptsTier1PlanWithOversizedSingleTaskExceedingDailyCapacity() {
+        // Given: 하루 한도(60분)를 넘는 90분짜리 태스크 하나만 그날 단독 배치 — ScheduleAllocator와 동일한 예외 규칙이
+        // Tier 1 검증에도 일관되게 적용되는지 확인한다.
+        LocalDate monday = LocalDate.of(2026, 8, 24);
+        LearningTask oversized = task(1L, "긴 태스크", "DB", 3, 90);
+
+        AiSchedulePlanResponseDto response = new AiSchedulePlanResponseDto(
+                List.of(new DailyPlanDto(monday, List.of(1L))),
+                List.of(1L)
+        );
+        given(chatClient.prompt().user(anyString()).call().entity(AiSchedulePlanResponseDto.class))
+                .willReturn(response);
+
+        // When
+        List<ScheduleAllocator.AllocatedItem> result = service.generateSchedule(
+                goal(), List.of(oversized), monday, Set.of(DayOfWeek.MONDAY), 60, 3650
+        );
+
+        // Then: 단일 태스크 단독 배치는 한도 초과라도 Tier 1이 그대로 채택한다.
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).task().getId()).isEqualTo(1L);
+        assertThat(result.get(0).date()).isEqualTo(monday);
+    }
+
+    @Test
+    void fallsBackWhenTier1DailyPlanContainsDuplicateTaskId() {
+        // Given: 같은 날짜에 동일한 taskId(1L)가 두 번 배정됨(AI 환각) — 최종 순열 검증에서 걸러져야 한다.
+        LocalDate monday = LocalDate.of(2026, 8, 24);
+        LearningTask task1 = task(1L, "정규화 기초", "DB", 1, 30);
+        LearningTask task2 = task(2L, "정규화 심화", "DB", 4, 30);
+
+        AiSchedulePlanResponseDto response = new AiSchedulePlanResponseDto(
+                List.of(new DailyPlanDto(monday, List.of(1L, 1L))), // 2L 누락 + 1L 중복
+                List.of(2L, 1L) // fallbackTaskOrder는 유효한 순열
+        );
+        given(chatClient.prompt().user(anyString()).call().entity(AiSchedulePlanResponseDto.class))
+                .willReturn(response);
+
+        // When
+        List<ScheduleAllocator.AllocatedItem> result = service.generateSchedule(
+                goal(), List.of(task1, task2), monday, Set.of(DayOfWeek.MONDAY), 60, 3650
+        );
+
+        // Then: Tier 1은 거부되고 Tier 2(fallbackTaskOrder: 2L -> 1L)로 정상 배정된다.
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).task().getId()).isEqualTo(2L);
+        assertThat(result.get(1).task().getId()).isEqualTo(1L);
+    }
+
+    @Test
+    void calculateAvailableSlotsCapsSlotCountForVeryLargeTaskLoad() {
+        // Given: 태스크가 아주 많고(50개 x 180분) dailyCapacityMinutes가 작아(30분) estimatedDays가 폭증하는 상황.
+        // 상한(MAX_DATE_SLOTS) 없이는 프롬프트에 넣을 날짜 슬롯이 수백 개로 불어나 토큰/비용 문제가 생길 수 있다.
+        List<LearningTask> manyTasks = java.util.stream.IntStream.rangeClosed(1, 50)
+                .mapToObj(i -> task((long) i, "태스크" + i, "DB", 3, 180))
+                .toList();
+
+        List<LocalDate> slots = service.calculateAvailableSlots(
+                LocalDate.of(2026, 8, 24), Set.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY),
+                manyTasks, 30
+        );
+
+        assertThat(slots).hasSize(ScheduleAiService.MAX_DATE_SLOTS);
+    }
+
+    @Test
+    void calculateAvailableSlotsKeepsMinimumTenForSmallTaskLoad() {
+        // Given: 태스크가 적으면(총 30분) 상한이 아니라 하한(최소 10개)이 적용되어야 한다.
+        List<LearningTask> fewTasks = List.of(task(1L, "가벼운 태스크", "DB", 1, 30));
+
+        List<LocalDate> slots = service.calculateAvailableSlots(
+                LocalDate.of(2026, 8, 24), Set.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY),
+                fewTasks, 60
+        );
+
+        assertThat(slots).hasSize(10);
+    }
+
+    @Test
     void fallsBackToTier3WhenAiCallThrows() {
         LocalDate monday = LocalDate.of(2026, 8, 24);
         LearningTask hard = task(1L, "심화", "DB", 5, 30);

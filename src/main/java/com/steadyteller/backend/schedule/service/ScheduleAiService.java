@@ -201,7 +201,10 @@ public class ScheduleAiService {
                 .toList();
     }
 
-    private List<LocalDate> calculateAvailableSlots(
+    // 패키지 전용으로 열어 슬롯 상한(캡) 동작을 단위 테스트에서 직접 검증할 수 있게 한다.
+    static final int MAX_DATE_SLOTS = 120;
+
+    List<LocalDate> calculateAvailableSlots(
             LocalDate earliestStart,
             Set<DayOfWeek> availableDays,
             List<LearningTask> tasks,
@@ -209,7 +212,10 @@ public class ScheduleAiService {
     ) {
         int totalMinutes = tasks.stream().mapToInt(LearningTask::getAllocatedMinutes).sum();
         int estimatedDays = (int) Math.ceil((double) totalMinutes / Math.max(dailyCapacityMinutes, 1));
-        int slotCount = Math.max(estimatedDays * 2, 10);
+        // 하한(최소 10개)은 태스크가 적어도 AI가 스케줄을 짤 여유를 주기 위함이고,
+        // 상한(MAX_DATE_SLOTS)은 dailyCapacityMinutes가 비정상적으로 작거나 태스크가 아주 많을 때
+        // 프롬프트가 감당 못할 만큼 길어지는 것을 막기 위한 안전장치다.
+        int slotCount = Math.min(Math.max(estimatedDays * 2, 10), MAX_DATE_SLOTS);
 
         List<LocalDate> slots = new ArrayList<>();
         LocalDate cursor = earliestStart;
