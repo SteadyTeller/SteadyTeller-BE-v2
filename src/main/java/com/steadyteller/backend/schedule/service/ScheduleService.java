@@ -7,6 +7,7 @@ import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
+import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
@@ -16,9 +17,12 @@ import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -101,6 +105,72 @@ public class ScheduleService {
         Schedule schedule = getOwnedSchedule(memberId, scheduleId);
         scheduleItemRepository.deleteByScheduleId(scheduleId);
         scheduleRepository.delete(schedule);
+    }
+
+    /**
+     * 스케줄 항목 하나의 수행 날짜/시간대를 수동으로 재배치한다 (CRUD의 Update).
+     * status(학습 수행 상태) 변경은 별도 단계(학습 수행) 소관이라 여기서 다루지 않는다.
+     */
+    @Transactional
+    public ScheduleResponseDto updateScheduleItem(
+            Long memberId, Long scheduleId, Long itemId, ScheduleItemUpdateRequestDto request
+    ) {
+        Schedule schedule = getOwnedSchedule(memberId, scheduleId);
+        MemberGoal goal = memberGoalRepository.findById(schedule.getGoalId())
+                .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
+
+        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(scheduleId);
+        ScheduleItem target = items.stream()
+                .filter(item -> item.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_NOT_FOUND));
+
+        LocalDate newDate = request.date();
+        int newMinutes = request.allocatedMinutes() != null ? request.allocatedMinutes() : target.getAllocatedMinutes();
+        if (newMinutes <= 0) {
+            throw new CustomException(ScheduleErrorCode.INVALID_SCHEDULE_ITEM_MINUTES);
+        }
+        if (newDate.isBefore(LocalDate.now())) {
+            throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_IN_PAST);
+        }
+        Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
+        if (!availableDays.contains(newDate.getDayOfWeek())) {
+            throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_NOT_AVAILABLE);
+        }
+
+        LocalDate oldDate = target.getDate();
+        List<ScheduleItem> othersOnNewDate = items.stream()
+                .filter(item -> !item.getId().equals(itemId) && item.getDate().equals(newDate))
+                .toList();
+        int existingMinutesOnNewDate = othersOnNewDate.stream().mapToInt(ScheduleItem::getAllocatedMinutes).sum();
+        int dailyCapacityMinutes = goal.getDailyStudyHours() * 60;
+        // 그 날짜의 유일한 항목이 되는 경우는 하루 한도를 넘어도 허용한다 (ScheduleAllocator와 동일한 예외 규칙).
+        if (!othersOnNewDate.isEmpty() && existingMinutesOnNewDate + newMinutes > dailyCapacityMinutes) {
+            throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_CAPACITY_EXCEEDED);
+        }
+
+        target.reschedule(newDate, newDate.getDayOfWeek(), newMinutes);
+        if (!oldDate.equals(newDate)) {
+            renumberOrderForDate(items, oldDate, null);
+            renumberOrderForDate(items, newDate, target);
+        }
+
+        return ScheduleResponseDto.of(schedule, items);
+    }
+
+    private void renumberOrderForDate(List<ScheduleItem> allItems, LocalDate date, ScheduleItem appendLast) {
+        List<ScheduleItem> onDate = allItems.stream()
+                .filter(item -> item.getDate().equals(date)
+                        && (appendLast == null || !item.getId().equals(appendLast.getId())))
+                .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex))
+                .collect(Collectors.toCollection(ArrayList::new));
+        if (appendLast != null) {
+            onDate.add(appendLast);
+        }
+        int order = 1;
+        for (ScheduleItem item : onDate) {
+            item.updateOrderIndex(order++);
+        }
     }
 
     private Schedule getOwnedSchedule(Long memberId, Long scheduleId) {

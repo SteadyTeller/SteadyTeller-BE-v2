@@ -1,9 +1,11 @@
 package com.steadyteller.backend.schedule.controller;
 
 import com.steadyteller.backend.global.common.ApiResponse;
+import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.service.ScheduleService;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -11,8 +13,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -60,5 +64,18 @@ public class ScheduleController {
     ) {
         scheduleService.deleteSchedule(memberId, scheduleId);
         return ResponseEntity.ok(ApiResponse.success("스케줄이 삭제되었습니다.", null));
+    }
+
+    @PatchMapping("/api/v1/schedules/{scheduleId}/items/{itemId}")
+    public ResponseEntity<ApiResponse<ScheduleResponseDto>> updateScheduleItem(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long scheduleId,
+            @PathVariable Long itemId,
+            @Valid @RequestBody ScheduleItemUpdateRequestDto request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "스케줄 항목이 재배치되었습니다.",
+                scheduleService.updateScheduleItem(memberId, scheduleId, itemId, request)
+        ));
     }
 }

@@ -14,7 +14,12 @@ public enum ScheduleErrorCode implements ErrorCode {
     SCHEDULE_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "S003", "스케줄 생성에 실패했습니다."),
     INVALID_LEARNING_TASK_DURATION(HttpStatus.BAD_REQUEST, "S004", "예상 소요 시간이 올바르지 않은 학습 태스크가 있습니다."),
     SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "S005", "존재하지 않는 스케줄입니다."),
-    SCHEDULE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "S006", "해당 스케줄에 대한 권한이 없습니다.");
+    SCHEDULE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "S006", "해당 스케줄에 대한 권한이 없습니다."),
+    SCHEDULE_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "S007", "존재하지 않는 스케줄 항목입니다."),
+    INVALID_SCHEDULE_ITEM_MINUTES(HttpStatus.BAD_REQUEST, "S008", "배정 시간은 0보다 커야 합니다."),
+    SCHEDULE_ITEM_DATE_IN_PAST(HttpStatus.BAD_REQUEST, "S009", "지난 날짜로는 재배치할 수 없습니다."),
+    SCHEDULE_ITEM_DATE_NOT_AVAILABLE(HttpStatus.BAD_REQUEST, "S010", "선택한 날짜는 목표의 가용 요일이 아닙니다."),
+    SCHEDULE_ITEM_CAPACITY_EXCEEDED(HttpStatus.BAD_REQUEST, "S011", "선택한 날짜의 배정 시간 합이 하루 학습 가능 시간을 초과합니다.");
 
     private final HttpStatus status;
     private final String code;

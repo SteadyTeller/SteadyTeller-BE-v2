@@ -86,4 +86,18 @@ public class ScheduleItem extends BaseTimeEntity {
                 .orderIndex(orderIndex)
                 .build();
     }
+
+    /**
+     * 사용자가 이 항목의 수행 날짜/시간을 수동으로 재배치할 때 사용한다.
+     * 학습 수행 상태(status)는 별도 단계(학습 수행)의 소관이라 여기서 다루지 않는다.
+     */
+    public void reschedule(LocalDate date, DayOfWeek dayOfWeek, int allocatedMinutes) {
+        this.date = date;
+        this.dayOfWeek = dayOfWeek;
+        this.allocatedMinutes = allocatedMinutes;
+    }
+
+    public void updateOrderIndex(int orderIndex) {
+        this.orderIndex = orderIndex;
+    }
 }
