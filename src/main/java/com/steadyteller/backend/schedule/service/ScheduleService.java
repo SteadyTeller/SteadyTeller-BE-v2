@@ -38,7 +38,6 @@ public class ScheduleService {
     private final ScheduleRepository scheduleRepository;
     private final ScheduleItemRepository scheduleItemRepository;
     private final ScheduleAiService scheduleAiService;
-    private final ScheduleAllocator scheduleAllocator;
 
     @Transactional
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
@@ -54,9 +53,8 @@ public class ScheduleService {
         int dailyCapacityMinutes = goal.getDailyStudyHours() * 60;
         LocalDate earliestStart = earliestStart(goal);
 
-        List<LearningTask> orderedTasks = scheduleAiService.orderTasks(goal, confirmedTasks);
-        List<ScheduleAllocator.AllocatedItem> allocations = scheduleAllocator.allocate(
-                orderedTasks, earliestStart, availableDays, dailyCapacityMinutes, MAX_HORIZON_DAYS
+        List<ScheduleAllocator.AllocatedItem> allocations = scheduleAiService.generateSchedule(
+                goal, confirmedTasks, earliestStart, availableDays, dailyCapacityMinutes, MAX_HORIZON_DAYS
         );
 
         Schedule schedule = scheduleRepository.save(Schedule.create(

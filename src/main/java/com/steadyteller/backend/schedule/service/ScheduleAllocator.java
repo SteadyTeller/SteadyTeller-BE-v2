@@ -15,9 +15,33 @@ import org.springframework.stereotype.Component;
  * 확정된 순서(orderedTasks)를 기준으로 availableDays/dailyCapacityMinutes 제약을 지키며
  * 각 태스크를 실제 날짜에 결정론적으로 배정한다.
  *
- * AI는 태스크 "순서"만 결정하고, 날짜/시간 배정은 이 알고리즘이 담당한다.
- * LLM은 숫자 제약(가용 요일, 일일 한도)을 매번 정확히 지키리라 보장할 수 없으므로,
- * 정확성이 중요한 배정 계산은 서버 코드로 고정하고 AI 산출물은 순서 힌트로만 사용한다.
+ * =========================================================================================
+ * [FUTURE EXTENSION: 방법 ③ 태스크 분할(Task Splitting / Chunking) 전환 가이드]
+ * =========================================================================================
+ * 향후 긴 태스크(예: 70분)를 일자별로 쪼개어(예: Day1에 60분, Day2에 10분) 배정하는
+ * 완전 분할 모델로 전환할 경우 아래와 같이 구현할 수 있습니다.
+ *
+ * 1. DB/Entity 확장:
+ *    - ScheduleItem에 chunkIndex(차수, 1, 2..), isLastChunk(boolean), totalEstimatedMinutes 추가
+ *    - 또는 LearningTask에 remainingMinutes 개념 추가
+ *
+ * 2. 분할 배정 알고리즘 변경:
+ *    while (pending != null) {
+ *        int minutes = pendingRemainingMinutes;
+ *        if (minutes <= remainingMinutes) {
+ *            result.add(new AllocatedItem(pending, cursor, minutes, orderInDay++, isLastChunk=true));
+ *            remainingMinutes -= minutes;
+ *            pending = iterator.hasNext() ? iterator.next() : null;
+ *        } else if (remainingMinutes > 0) {
+ *            // 당일 잔여 시간만큼만 잘라서 배정하고 나머지는 다음 날로 이월
+ *            result.add(new AllocatedItem(pending, cursor, remainingMinutes, orderInDay++, isLastChunk=false));
+ *            pendingRemainingMinutes = minutes - remainingMinutes;
+ *            break; // 당일 소진 후 익일로 이동
+ *        } else {
+ *            break;
+ *        }
+ *    }
+ * =========================================================================================
  */
 @Component
 public class ScheduleAllocator {

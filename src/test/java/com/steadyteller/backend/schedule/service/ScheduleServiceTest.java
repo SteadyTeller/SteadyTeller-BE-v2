@@ -57,7 +57,7 @@ class ScheduleServiceTest {
     void setUp() {
         scheduleService = new ScheduleService(
                 memberGoalRepository, learningTaskRepository, scheduleRepository,
-                scheduleItemRepository, scheduleAiService, new ScheduleAllocator()
+                scheduleItemRepository, scheduleAiService
         );
     }
 
@@ -69,10 +69,18 @@ class ScheduleServiceTest {
         LearningTask task1 = task(1L, "정규화 기초", 45);
         LearningTask task2 = task(2L, "정규화 심화", 45);
 
+        LocalDate date1 = LocalDate.of(2026, 8, 24);
+        LocalDate date2 = LocalDate.of(2026, 8, 26);
+        List<ScheduleAllocator.AllocatedItem> allocations = List.of(
+                new ScheduleAllocator.AllocatedItem(task1, date1, 45, 1),
+                new ScheduleAllocator.AllocatedItem(task2, date2, 45, 1)
+        );
+
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
         given(learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(task1, task2));
-        given(scheduleAiService.orderTasks(goal, List.of(task1, task2))).willReturn(List.of(task1, task2));
+        given(scheduleAiService.generateSchedule(any(), any(), any(), any(), any(Integer.class), any(Integer.class)))
+                .willReturn(allocations);
         given(scheduleRepository.save(any(Schedule.class))).willAnswer(invocation -> {
             Schedule schedule = invocation.getArgument(0);
             ReflectionTestUtils.setField(schedule, "id", 100L);
