@@ -22,10 +22,6 @@ import lombok.NoArgsConstructor;
  * 회원의 학습 목표. 한 회원이 여러 개의 MemberGoal을 가질 수 있다 (1:N).
  * memberId는 JWT에서 추출한 값을 그대로 저장하며, Member 엔티티는 별도 도메인(다른 팀원 구현)이므로
  * 이 프로젝트 내에서는 연관관계(FK 매핑) 없이 순수 컬럼으로만 참조한다.
- *
- * 스케줄링(#7)에 필요한 최소 범위만 정의한다 (조회 + 소유권 검증).
- * 생성/수정/삭제 API 및 AI 세부 태스크 생성은 #1(PR #6)에서 별도로 진행 중이며,
- * 해당 PR이 dev에 머지되면 이 클래스는 정의가 중복되므로 병합 시점에 정리가 필요하다.
  */
 @Entity
 @Getter
@@ -67,6 +63,17 @@ public class MemberGoal extends BaseTimeEntity {
     public MemberGoal(Long memberId, String title, LocalDate startDate, LocalDate targetDate,
                        String currentLevel, Integer dailyStudyHours, List<String> availableDays, String focusArea) {
         this.memberId = memberId;
+        this.title = title;
+        this.startDate = startDate;
+        this.targetDate = targetDate;
+        this.currentLevel = currentLevel;
+        this.dailyStudyHours = dailyStudyHours;
+        this.availableDays = availableDays;
+        this.focusArea = focusArea;
+    }
+
+    public void update(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
+                        Integer dailyStudyHours, List<String> availableDays, String focusArea) {
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
