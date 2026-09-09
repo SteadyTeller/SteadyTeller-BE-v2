@@ -23,11 +23,16 @@ public class LearningTaskAiService {
     private final ChatClient chatClient;
 
     public List<AiGeneratedTaskDto> generateTasks(MemberGoal goal) {
-        List<AiGeneratedTaskDto> tasks = chatClient.prompt()
-                .user(buildPrompt(goal))
-                .call()
-                .entity(new ParameterizedTypeReference<List<AiGeneratedTaskDto>>() {
-                });
+        List<AiGeneratedTaskDto> tasks;
+        try {
+            tasks = chatClient.prompt()
+                    .user(buildPrompt(goal))
+                    .call()
+                    .entity(new ParameterizedTypeReference<List<AiGeneratedTaskDto>>() {
+                    });
+        } catch (RuntimeException e) {
+            throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);
+        }
 
         if (tasks == null || tasks.isEmpty()) {
             throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);

@@ -7,6 +7,7 @@ import com.steadyteller.backend.membergoal.dto.MemberStudyInfoRequestDto;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +68,8 @@ public class MemberGoalService {
     }
 
     private void validateGoalRequest(MemberStudyInfoRequestDto request) {
-        if (request.startDate().isAfter(request.targetDate())
+        if (request.targetDate().isBefore(LocalDate.now())
+                || request.startDate().isAfter(request.targetDate())
                 || request.availableDays().stream().anyMatch(day -> !VALID_AVAILABLE_DAYS.contains(day))
                 || request.availableDays().size() != request.availableDays().stream().distinct().count()) {
             throw new CustomException(GlobalErrorCode.INVALID_INPUT_VALUE);

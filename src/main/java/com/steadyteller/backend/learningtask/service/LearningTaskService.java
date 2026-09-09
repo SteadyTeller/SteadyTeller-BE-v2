@@ -12,6 +12,7 @@ import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateResponseDt
 import com.steadyteller.backend.learningtask.dto.LearningTaskResponseDto;
 import com.steadyteller.backend.learningtask.entity.LearningTask;
 import com.steadyteller.backend.learningtask.entity.LearningTaskSource;
+import com.steadyteller.backend.learningtask.entity.LearningTaskStatus;
 import com.steadyteller.backend.learningtask.exception.LearningTaskErrorCode;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import java.util.List;
@@ -124,6 +125,9 @@ public class LearningTaskService {
                         .build())
                 .toList();
 
+        List<LearningTask> existingTasks = learningTaskRepository.findByGoalIdAndStatus(
+                goalId, LearningTaskStatus.PENDING);
+        learningTaskRepository.deleteAll(existingTasks);
         List<LearningTask> saved = learningTaskRepository.saveAll(tasks);
         candidateStore.clearForGoal(goalId);
 

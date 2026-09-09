@@ -48,6 +48,17 @@ class LearningTaskAiServiceTest {
                 .isInstanceOf(CustomException.class);
     }
 
+    @Test
+    void generateTasksWrapsAiClientFailure() {
+        LearningTaskAiService service = new LearningTaskAiService(chatClient);
+        given(chatClient.prompt().user(anyString()).call()
+                .entity(any(ParameterizedTypeReference.class)))
+                .willThrow(new RuntimeException("AI timeout"));
+
+        assertThatThrownBy(() -> service.generateTasks(goal()))
+                .isInstanceOf(CustomException.class);
+    }
+
     private MemberGoal goal() {
         return MemberGoal.builder()
                 .memberId(1L).title("Java").startDate(LocalDate.of(2026, 2, 1))

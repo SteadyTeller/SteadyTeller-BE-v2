@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 승인(confirm) 전까지는 후보(candidate) 목록만 다루며 DB에 저장되지 않는다.
  */
 @RestController
+@RequestMapping("/api/v1")
 @RequiredArgsConstructor
 public class LearningTaskController {
 

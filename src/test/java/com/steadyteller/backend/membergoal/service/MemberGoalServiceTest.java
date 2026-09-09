@@ -37,6 +37,15 @@ class MemberGoalServiceTest {
     }
 
     @Test
+    void createGoalRejectsTargetDateBeforeToday() {
+        MemberStudyInfoRequestDto request = request(
+                LocalDate.now().minusDays(2), LocalDate.now().minusDays(1), List.of("MON"));
+
+        assertThatThrownBy(() -> memberGoalService.createGoal(1L, request))
+                .isInstanceOf(CustomException.class);
+    }
+
+    @Test
     void createGoalRejectsInvalidOrDuplicateAvailableDays() {
         // 같은 요일이 중복으로 전달되면 유효하지 않은 목표 설정으로 처리한다.
         MemberStudyInfoRequestDto request = request(LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 2), List.of("MON", "MON"));
