@@ -84,40 +84,43 @@ public class ScheduleAiService {
         Map<Long, LearningTask> taskMap = confirmedTasks.stream()
                 .collect(Collectors.toMap(LearningTask::getId, Function.identity()));
 
-        try {
-            List<LocalDate> dateSlots = calculateAvailableSlots(earliestStart, availableDays, confirmedTasks, dailyCapacityMinutes);
-            String prompt = buildPrompt(goal, confirmedTasks, dateSlots, dailyCapacityMinutes);
+        List<LocalDate> dateSlots = calculateAvailableSlots(earliestStart, availableDays, confirmedTasks, dailyCapacityMinutes);
+        Set<LocalDate> slotSet = new HashSet<>(dateSlots);
+        String prompt = buildPrompt(goal, confirmedTasks, dateSlots, dailyCapacityMinutes);
 
-            AiSchedulePlanResponseDto response = chatClient.prompt()
+        AiSchedulePlanResponseDto response = null;
+        try {
+            response = chatClient.prompt()
                     .user(prompt)
                     .call()
                     .entity(AiSchedulePlanResponseDto.class);
-
-            if (response != null) {
-                // Tier 1: AI 일자별 직배정 검증 및 채택
-                Optional<List<ScheduleAllocator.AllocatedItem>> directPlan = validateAndBuildDirectPlan(
-                        response.dailyPlans(), taskMap, validIds, earliestStart, availableDays, dailyCapacityMinutes
-                );
-                if (directPlan.isPresent()) {
-                    log.info("AI 일자별 직배정(Tier 1) 검증 성공으로 스케줄을 채택합니다. goalId={}", goal.getId());
-                    return directPlan.get();
-                }
-
-                // Tier 2: AI 순서 기반 서버 결정론적 배정
-                List<Long> fallbackOrder = response.fallbackTaskOrder();
-                if (isValidPermutation(fallbackOrder, validIds)) {
-                    log.warn("AI 일자별 직배정 검증 실패로 AI 순서 기반 배정(Tier 2)으로 폴백합니다. goalId={}", goal.getId());
-                    List<LearningTask> orderedTasks = fallbackOrder.stream().map(taskMap::get).toList();
-                    return scheduleAllocator.allocate(orderedTasks, earliestStart, availableDays, dailyCapacityMinutes, maxHorizonDays);
-                }
-            }
-            log.warn("AI 응답이 유효하지 않아 기본 난이도순 배정(Tier 3)으로 폴백합니다. goalId={}", goal.getId());
         } catch (Exception e) {
-            log.warn("AI 스케줄 생성 호출 실패로 기본 난이도순 배정(Tier 3)으로 폴백합니다. goalId={}, cause={}",
-                    goal.getId(), e.getMessage());
+            log.warn("AI 스케줄 생성 호출 또는 응답 파싱 실패로 폴백을 진행합니다. goalId={}, cause={}",
+                    goal.getId(), e.getMessage(), e);
+        }
+
+        if (response != null) {
+            // Tier 1: AI 일자별 직배정 검증 및 채택
+            Optional<List<ScheduleAllocator.AllocatedItem>> directPlan = validateAndBuildDirectPlan(
+                    response.dailyPlans(), taskMap, validIds, earliestStart, availableDays,
+                    dailyCapacityMinutes, slotSet, goal, maxHorizonDays
+            );
+            if (directPlan.isPresent()) {
+                log.info("AI 일자별 직배정(Tier 1) 검증 성공으로 스케줄을 채택합니다. goalId={}", goal.getId());
+                return directPlan.get();
+            }
+
+            // Tier 2: AI 순서 기반 서버 결정론적 배정
+            List<Long> fallbackOrder = response.fallbackTaskOrder();
+            if (isValidPermutation(fallbackOrder, validIds)) {
+                log.warn("AI 일자별 직배정 검증 실패로 AI 순서 기반 배정(Tier 2)으로 폴백합니다. goalId={}", goal.getId());
+                List<LearningTask> orderedTasks = fallbackOrder.stream().map(taskMap::get).toList();
+                return scheduleAllocator.allocate(orderedTasks, earliestStart, availableDays, dailyCapacityMinutes, maxHorizonDays);
+            }
         }
 
         // Tier 3: 기본 순서(난이도 오름차순) 기반 서버 배정
+        log.warn("AI 응답이 없거나 유효하지 않아 기본 난이도순 배정(Tier 3)으로 폴백합니다. goalId={}", goal.getId());
         List<LearningTask> defaultOrderedTasks = defaultOrder(confirmedTasks);
         return scheduleAllocator.allocate(defaultOrderedTasks, earliestStart, availableDays, dailyCapacityMinutes, maxHorizonDays);
     }
@@ -131,7 +134,10 @@ public class ScheduleAiService {
             List<Long> validIds,
             LocalDate earliestStart,
             Set<DayOfWeek> availableDays,
-            int dailyCapacityMinutes
+            int dailyCapacityMinutes,
+            Set<LocalDate> allowedDateSlots,
+            MemberGoal goal,
+            int maxHorizonDays
     ) {
         if (dailyPlans == null || dailyPlans.isEmpty()) {
             return Optional.empty();
@@ -149,8 +155,12 @@ public class ScheduleAiService {
                 return Optional.empty();
             }
 
-            // 1. 날짜 유효성 및 가용 요일 검증
-            if (date.isBefore(earliestStart) || !availableDays.contains(date.getDayOfWeek())) {
+            // 1. 날짜 유효성, 가용 요일, 제공된 슬롯 포함 여부, 목표 기간 및 최대 허용 범위 검증
+            if (date.isBefore(earliestStart)
+                    || !availableDays.contains(date.getDayOfWeek())
+                    || (allowedDateSlots != null && !allowedDateSlots.contains(date))
+                    || (goal != null && goal.getTargetDate() != null && date.isAfter(goal.getTargetDate()))
+                    || date.isAfter(earliestStart.plusDays(maxHorizonDays))) {
                 return Optional.empty();
             }
 
@@ -244,12 +254,17 @@ public class ScheduleAiService {
                 .map(date -> "- %s (%s)".formatted(date.toString(), date.getDayOfWeek().name().substring(0, 3)))
                 .collect(Collectors.joining("\n"));
 
+        String targetPeriod = (goal != null && goal.getStartDate() != null && goal.getTargetDate() != null)
+                ? "%s ~ %s".formatted(goal.getStartDate(), goal.getTargetDate())
+                : "미정";
+
         return """
                 당신은 전문 학습 코칭 AI입니다. 아래 학습 목표와 확정된 태스크 목록, 그리고 학습 가능 날짜 목록을 참고하여
                 사용자에게 최적의 일자별 학습 스케줄을 배정하세요.
 
                 [학습 목표]
                 - 목표명: %s
+                - 목표 기간: %s
                 - 현재 수준: %s
                 - 집중 학습 분야: %s
                 - 1일 최대 학습 시간: %d분
@@ -270,7 +285,7 @@ public class ScheduleAiService {
                 3. 공통 무결성 규칙:
                    - 모든 확정된 태스크 ID는 dailyPlans와 fallbackTaskOrder에 각각 정확히 1번씩만 포함되어야 합니다.
                    - 없는 ID를 지어내거나 기존 ID를 누락하지 마세요.
-                """.formatted(goal.getTitle(), goal.getCurrentLevel(), goal.getFocusArea(),
+                """.formatted(goal.getTitle(), targetPeriod, goal.getCurrentLevel(), goal.getFocusArea(),
                 dailyCapacityMinutes, slotLines, taskLines, dailyCapacityMinutes, dailyCapacityMinutes);
     }
 }

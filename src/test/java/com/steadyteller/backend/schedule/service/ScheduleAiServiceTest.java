@@ -228,6 +228,68 @@ class ScheduleAiServiceTest {
     }
 
     @Test
+    void fallsBackToTier2WhenTier1DateExceedsTargetDate() {
+        // Given: 목표 종료일(targetDate)이 2026-08-25인데 AI가 2026-08-26(수)에 배정함
+        LocalDate monday = LocalDate.of(2026, 8, 24);
+        LocalDate wednesday = LocalDate.of(2026, 8, 26);
+        LearningTask task1 = task(1L, "정규화 기초", "DB", 2, 30);
+
+        MemberGoal goalWithTightDeadline = MemberGoal.builder()
+                .memberId(1L)
+                .title("단기 완성")
+                .startDate(monday)
+                .targetDate(LocalDate.of(2026, 8, 25)) // 8월 25일까지
+                .currentLevel("초급")
+                .dailyStudyHours(1)
+                .availableDays(List.of("MON", "WED"))
+                .focusArea("DB")
+                .build();
+        ReflectionTestUtils.setField(goalWithTightDeadline, "id", 1L);
+
+        AiSchedulePlanResponseDto response = new AiSchedulePlanResponseDto(
+                List.of(new DailyPlanDto(wednesday, List.of(1L))), // targetDate 초과 배정
+                List.of(1L)
+        );
+        given(chatClient.prompt().user(anyString()).call().entity(AiSchedulePlanResponseDto.class))
+                .willReturn(response);
+
+        // When
+        List<ScheduleAllocator.AllocatedItem> result = service.generateSchedule(
+                goalWithTightDeadline, List.of(task1), monday, Set.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY), 60, 3650
+        );
+
+        // Then: Tier 1은 거부되고 Tier 2(월요일부터 순차 배정)로 정상 배정됨
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).task().getId()).isEqualTo(1L);
+        assertThat(result.get(0).date()).isEqualTo(monday);
+    }
+
+    @Test
+    void fallsBackToTier2WhenTier1DateNotInDateSlots() {
+        // Given: AI가 2099년 같은 제공되지 않은 먼 날짜 슬롯을 반환함
+        LocalDate monday = LocalDate.of(2026, 8, 24);
+        LocalDate farFutureMonday = LocalDate.of(2099, 1, 4); // 월요일이지만 dateSlots에 없음
+        LearningTask task1 = task(1L, "정규화 기초", "DB", 2, 30);
+
+        AiSchedulePlanResponseDto response = new AiSchedulePlanResponseDto(
+                List.of(new DailyPlanDto(farFutureMonday, List.of(1L))),
+                List.of(1L)
+        );
+        given(chatClient.prompt().user(anyString()).call().entity(AiSchedulePlanResponseDto.class))
+                .willReturn(response);
+
+        // When
+        List<ScheduleAllocator.AllocatedItem> result = service.generateSchedule(
+                goal(), List.of(task1), monday, Set.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY), 60, 3650
+        );
+
+        // Then: Tier 1은 거부되고 Tier 2에 의해 실제 earliestStart(월요일)에 배정됨
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).task().getId()).isEqualTo(1L);
+        assertThat(result.get(0).date()).isEqualTo(monday);
+    }
+
+    @Test
     void fallsBackToTier3WhenAiCallThrows() {
         LocalDate monday = LocalDate.of(2026, 8, 24);
         LearningTask hard = task(1L, "심화", "DB", 5, 30);
@@ -245,6 +307,26 @@ class ScheduleAiServiceTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(0).task().getId()).isEqualTo(2L);
         assertThat(result.get(1).task().getId()).isEqualTo(1L);
+    }
+
+    @Test
+    void propagatesExceptionWhenAllocatorThrowsInTier2() {
+        // Given: AI Tier 1은 무효하여 Tier 2로 넘어갔으나, allocator에서 maxHorizonDays 초과로 CustomException 발생 시
+        // AI 예외 catch에 삼켜지지 않고 예외가 전파되는지 검증
+        LocalDate monday = LocalDate.of(2026, 8, 24);
+        LearningTask task1 = task(1L, "정규화 기초", "DB", 2, 30);
+
+        AiSchedulePlanResponseDto response = new AiSchedulePlanResponseDto(
+                List.of(new DailyPlanDto(monday, List.of())), // Tier 1 무효
+                List.of(1L) // Tier 2 유효
+        );
+        given(chatClient.prompt().user(anyString()).call().entity(AiSchedulePlanResponseDto.class))
+                .willReturn(response);
+
+        // When & Then: maxHorizonDays=0 이고 월요일이 비가용일인 상황 -> daysWalked > 0 으로 SCHEDULE_GENERATION_FAILED 예외 발생
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.generateSchedule(
+                goal(), List.of(task1), monday, Set.of(DayOfWeek.WEDNESDAY), 60, 0
+        )).isInstanceOf(com.steadyteller.backend.global.exception.CustomException.class);
     }
 
     private LearningTask task(Long id, String title, String category, int difficulty, int minutes) {
