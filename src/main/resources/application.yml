@@ -1,7 +1,7 @@
 spring:
   application:
     name: SteadyTeller-BE
-  
+
   profiles:
     active: dev
 
@@ -31,8 +31,12 @@ spring:
     show-sql: true
 
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:default-key}
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:default-key}
+        chat:
+          options:
+            model: gemini-3.6-flash
 
 app:
   jwt:
@@ -60,8 +64,12 @@ spring:
     show-sql: false
 
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY}
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: gemini-3.6-flash
 
 app:
   jwt:
