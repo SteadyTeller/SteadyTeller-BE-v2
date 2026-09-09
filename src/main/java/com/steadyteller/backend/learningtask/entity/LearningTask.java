@@ -85,4 +85,12 @@ public class LearningTask extends BaseTimeEntity {
         this.isModified = isModified;
         this.reviewedAt = LocalDateTime.now();
     }
+
+    public void markAsScheduled() {
+        this.status = LearningTaskStatus.SCHEDULED;
+    }
+
+    public void markAsPending() {
+        this.status = LearningTaskStatus.PENDING;
+    }
 }

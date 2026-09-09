@@ -83,7 +83,7 @@ class ScheduleServiceTest {
         );
 
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
-        given(learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING))
+        given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(task1, task2));
         given(scheduleAiService.generateSchedule(any(), any(), any(), any(), any(Integer.class), any(Integer.class)))
                 .willReturn(allocations);
@@ -104,6 +104,10 @@ class ScheduleServiceTest {
         DailyScheduleDto firstDay = response.dailySchedules().get(0);
         assertThat(firstDay.items()).hasSize(1);
         assertThat(firstDay.totalAllocatedMinutes()).isEqualTo(45);
+
+        // 스케줄 생성 후 태스크의 상태가 SCHEDULED로 전이되었는지 확인
+        assertThat(task1.getStatus()).isEqualTo(LearningTaskStatus.SCHEDULED);
+        assertThat(task2.getStatus()).isEqualTo(LearningTaskStatus.SCHEDULED);
     }
 
     @Test
@@ -134,7 +138,7 @@ class ScheduleServiceTest {
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON"));
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
-        given(learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING))
+        given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
@@ -151,7 +155,7 @@ class ScheduleServiceTest {
         MemberGoal goal = goal(memberId, List.of("MON"));
         LearningTask invalidTask = task(1L, "잘못된 태스크", 0);
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
-        given(learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING))
+        given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(invalidTask));
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
@@ -161,13 +165,58 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void throwsWhenDailyStudyHoursIsNullOrNonPositive() {
+        Long memberId = 1L;
+        Long goalId = 10L;
+        LearningTask task1 = task(1L, "정규화 기초", 30);
+
+        // 1. null인 경우
+        MemberGoal nullHoursGoal = MemberGoal.builder()
+                .memberId(memberId).title("목표").startDate(LocalDate.now()).targetDate(LocalDate.now().plusMonths(1))
+                .currentLevel("초급").dailyStudyHours(null).availableDays(List.of("MON")).focusArea("DB").build();
+        ReflectionTestUtils.setField(nullHoursGoal, "id", goalId);
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(nullHoursGoal));
+        given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
+                .willReturn(List.of(task1));
+
+        assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
+
+        // 2. 0인 경우
+        MemberGoal zeroHoursGoal = MemberGoal.builder()
+                .memberId(memberId).title("목표").startDate(LocalDate.now()).targetDate(LocalDate.now().plusMonths(1))
+                .currentLevel("초급").dailyStudyHours(0).availableDays(List.of("MON")).focusArea("DB").build();
+        ReflectionTestUtils.setField(zeroHoursGoal, "id", goalId);
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(zeroHoursGoal));
+
+        assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
+
+        // 3. 음수인 경우
+        MemberGoal negativeHoursGoal = MemberGoal.builder()
+                .memberId(memberId).title("목표").startDate(LocalDate.now()).targetDate(LocalDate.now().plusMonths(1))
+                .currentLevel("초급").dailyStudyHours(-2).availableDays(List.of("MON")).focusArea("DB").build();
+        ReflectionTestUtils.setField(negativeHoursGoal, "id", goalId);
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(negativeHoursGoal));
+
+        assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
+    }
+
+    @Test
     void throwsWhenAvailableDaysContainInvalidValue() {
         Long memberId = 1L;
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON", "HOLIDAY"));
         LearningTask task1 = task(1L, "정규화 기초", 30);
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
-        given(learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING))
+        given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(task1));
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
@@ -242,13 +291,20 @@ class ScheduleServiceTest {
     }
 
     @Test
-    void deleteScheduleRemovesScheduleAndItsItems() {
+    void deleteScheduleRemovesScheduleAndItsItemsAndRevertsTasksToPending() {
         Long memberId = 1L;
         Schedule schedule = schedule(100L, memberId, 10L);
+        LearningTask scheduledTask = task(1L, "정규화 기초", 30);
+        scheduledTask.markAsScheduled();
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+        given(learningTaskRepository.findAllById(List.of(1L))).willReturn(List.of(scheduledTask));
 
         scheduleService.deleteSchedule(memberId, 100L);
 
+        assertThat(scheduledTask.getStatus()).isEqualTo(LearningTaskStatus.PENDING);
         verify(scheduleItemRepository, times(1)).deleteByScheduleId(100L);
         verify(scheduleRepository, times(1)).delete(schedule);
     }

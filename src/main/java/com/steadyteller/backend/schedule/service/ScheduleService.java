@@ -48,14 +48,14 @@ public class ScheduleService {
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
         MemberGoal goal = getOwnedGoal(memberId, goalId);
         List<LearningTask> confirmedTasks =
-                learningTaskRepository.findByGoalIdAndStatus(goalId, LearningTaskStatus.PENDING);
+                learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
         if (confirmedTasks.isEmpty()) {
             throw new CustomException(ScheduleErrorCode.NO_CONFIRMED_TASKS);
         }
         validateAllocatedMinutes(confirmedTasks);
 
         Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
-        int dailyCapacityMinutes = goal.getDailyStudyHours() * 60;
+        int dailyCapacityMinutes = calculateDailyCapacityMinutes(goal);
         LocalDate earliestStart = earliestStart(goal);
 
         List<ScheduleAllocator.AllocatedItem> allocations = scheduleAiService.generateSchedule(
@@ -82,6 +82,10 @@ public class ScheduleService {
                 .toList();
         scheduleItemRepository.saveAll(items);
 
+        for (LearningTask task : confirmedTasks) {
+            task.markAsScheduled();
+        }
+
         return ScheduleResponseDto.of(schedule, items);
     }
 
@@ -103,6 +107,16 @@ public class ScheduleService {
     @Transactional
     public void deleteSchedule(Long memberId, Long scheduleId) {
         Schedule schedule = getOwnedSchedule(memberId, scheduleId);
+        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(scheduleId);
+        List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId).toList();
+        if (!taskIds.isEmpty()) {
+            List<LearningTask> tasks = learningTaskRepository.findAllById(taskIds);
+            for (LearningTask task : tasks) {
+                if (task.getStatus() == LearningTaskStatus.SCHEDULED) {
+                    task.markAsPending();
+                }
+            }
+        }
         scheduleItemRepository.deleteByScheduleId(scheduleId);
         scheduleRepository.delete(schedule);
     }
@@ -143,7 +157,7 @@ public class ScheduleService {
                 .filter(item -> !item.getId().equals(itemId) && item.getDate().equals(newDate))
                 .toList();
         int existingMinutesOnNewDate = othersOnNewDate.stream().mapToInt(ScheduleItem::getAllocatedMinutes).sum();
-        int dailyCapacityMinutes = goal.getDailyStudyHours() * 60;
+        int dailyCapacityMinutes = calculateDailyCapacityMinutes(goal);
         // 그 날짜의 유일한 항목이 되는 경우는 하루 한도를 넘어도 허용한다 (ScheduleAllocator와 동일한 예외 규칙).
         if (!othersOnNewDate.isEmpty() && existingMinutesOnNewDate + newMinutes > dailyCapacityMinutes) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_CAPACITY_EXCEEDED);
@@ -232,5 +246,12 @@ public class ScheduleService {
             case "SUN" -> DayOfWeek.SUNDAY;
             default -> throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
         };
+    }
+
+    private int calculateDailyCapacityMinutes(MemberGoal goal) {
+        if (goal.getDailyStudyHours() == null || goal.getDailyStudyHours() <= 0) {
+            throw new CustomException(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
+        }
+        return goal.getDailyStudyHours() * 60;
     }
 }
