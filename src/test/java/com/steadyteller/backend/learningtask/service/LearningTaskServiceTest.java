@@ -6,10 +6,10 @@ import static org.mockito.Mockito.verify;
 
 import com.steadyteller.backend.global.exception.CustomException;
 import com.steadyteller.backend.learningtask.candidate.LearningTaskCandidate;
-import com.steadyteller.backend.learningtask.candidate.LearningTaskCandidateStore;
 import com.steadyteller.backend.learningtask.entity.LearningTask;
 import com.steadyteller.backend.learningtask.entity.LearningTaskSource;
 import com.steadyteller.backend.learningtask.entity.LearningTaskStatus;
+import com.steadyteller.backend.learningtask.repository.LearningTaskCandidateRepository;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
@@ -32,7 +32,7 @@ class LearningTaskServiceTest {
     @Mock
     private LearningTaskAiService learningTaskAiService;
     @Mock
-    private LearningTaskCandidateStore candidateStore;
+    private LearningTaskCandidateRepository candidateRepository;
 
     @InjectMocks
     private LearningTaskService learningTaskService;
@@ -44,8 +44,8 @@ class LearningTaskServiceTest {
                 .memberId(1L).title("Java").startDate(LocalDate.of(2026, 2, 1))
                 .targetDate(LocalDate.of(2026, 2, 2)).currentLevel("BEGINNER")
                 .dailyStudyHours(1).availableDays(List.of("MON")).focusArea("backend").build();
-        given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
-        given(candidateStore.findByGoal(10L)).willReturn(List.of());
+        given(memberGoalRepository.findByIdForUpdate(10L)).willReturn(Optional.of(goal));
+        given(candidateRepository.findByGoalIdOrderByIdAsc(10L)).willReturn(List.of());
 
         assertThatThrownBy(() -> learningTaskService.confirmTasks(1L, 10L))
                 .isInstanceOf(CustomException.class);
@@ -57,13 +57,14 @@ class LearningTaskServiceTest {
                 .memberId(1L).title("Java").startDate(LocalDate.now())
                 .targetDate(LocalDate.now().plusDays(1)).currentLevel("BEGINNER")
                 .dailyStudyHours(1).availableDays(List.of("MON")).focusArea("backend").build();
-        LearningTaskCandidate candidate = new LearningTaskCandidate(
-                1L, 10L, 1L, "Spring", "backend", "Spring MVC", 3, 30,
-                LearningTaskSource.AI_GENERATED, false);
+        LearningTaskCandidate candidate = LearningTaskCandidate.builder()
+                .goalId(10L).memberId(1L).title("Spring").category("backend").subject("Spring MVC")
+                .difficulty(3).allocatedMinutes(30).source(LearningTaskSource.AI_GENERATED).modified(false)
+                .build();
         LearningTask existingTask = org.mockito.Mockito.mock(LearningTask.class);
 
-        given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
-        given(candidateStore.findByGoal(10L)).willReturn(List.of(candidate));
+        given(memberGoalRepository.findByIdForUpdate(10L)).willReturn(Optional.of(goal));
+        given(candidateRepository.findByGoalIdOrderByIdAsc(10L)).willReturn(List.of(candidate));
         given(learningTaskRepository.findByGoalIdAndStatus(10L, LearningTaskStatus.PENDING))
                 .willReturn(List.of(existingTask));
 
@@ -71,5 +72,6 @@ class LearningTaskServiceTest {
 
         verify(learningTaskRepository).deleteAll(List.of(existingTask));
         verify(learningTaskRepository).saveAll(org.mockito.ArgumentMatchers.anyList());
+        verify(candidateRepository).deleteByGoalId(10L);
     }
 }
