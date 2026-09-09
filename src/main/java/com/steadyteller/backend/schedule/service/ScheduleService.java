@@ -117,7 +117,8 @@ public class ScheduleService {
                 }
             }
         }
-        scheduleItemRepository.deleteByScheduleId(scheduleId);
+        scheduleItemRepository.deleteAll(items);
+        scheduleItemRepository.flush();
         scheduleRepository.delete(schedule);
     }
 

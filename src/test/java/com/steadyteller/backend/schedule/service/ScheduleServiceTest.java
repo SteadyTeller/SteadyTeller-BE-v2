@@ -305,7 +305,7 @@ class ScheduleServiceTest {
         scheduleService.deleteSchedule(memberId, 100L);
 
         assertThat(scheduledTask.getStatus()).isEqualTo(LearningTaskStatus.PENDING);
-        verify(scheduleItemRepository, times(1)).deleteByScheduleId(100L);
+        verify(scheduleItemRepository, times(1)).deleteAll(List.of(item));
         verify(scheduleRepository, times(1)).delete(schedule);
     }
 
@@ -318,7 +318,7 @@ class ScheduleServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
-        verify(scheduleItemRepository, never()).deleteByScheduleId(org.mockito.ArgumentMatchers.anyLong());
+        verify(scheduleItemRepository, never()).deleteAll(any());
         verify(scheduleRepository, never()).delete(any(Schedule.class));
     }
 
