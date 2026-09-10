@@ -29,6 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * MemberGoal + 확정된 LearningTask 목록을 바탕으로 일자별 학습 스케줄을 생성/조회한다 (설계 명세 4번).
+ * <p>
+ * 스케줄 생성(generateSchedule)은 {@link #getOwnedGoalForUpdate}로 MemberGoal 로우에 비관적 락을 먼저 잡고 실행되어,
+ * 목표 삭제(deleteGoal) 및 태스크 확정(confirmTasks)과의 동시성 경합 시 고아 데이터 발생 및 참조 무결성 파괴를 원천 방지한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -47,7 +50,7 @@ public class ScheduleService {
 
     @Transactional
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
-        MemberGoal goal = getOwnedGoal(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
         List<LearningTask> confirmedTasks =
                 learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
         if (confirmedTasks.isEmpty()) {
@@ -200,6 +203,15 @@ public class ScheduleService {
 
     private MemberGoal getOwnedGoal(Long memberId, Long goalId) {
         MemberGoal goal = memberGoalRepository.findById(goalId)
+                .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
+        if (!goal.isOwnedBy(memberId)) {
+            throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
+        }
+        return goal;
+    }
+
+    private MemberGoal getOwnedGoalForUpdate(Long memberId, Long goalId) {
+        MemberGoal goal = memberGoalRepository.findByIdForUpdate(goalId)
                 .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
         if (!goal.isOwnedBy(memberId)) {
             throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);

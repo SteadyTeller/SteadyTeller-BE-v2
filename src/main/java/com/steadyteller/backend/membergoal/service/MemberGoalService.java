@@ -57,7 +57,7 @@ public class MemberGoalService {
     @Transactional
     public MemberGoalResponseDto updateGoal(Long memberId, Long goalId, MemberStudyInfoRequestDto request) {
         validateGoalRequest(request);
-        MemberGoal goal = getOwnedGoal(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
         goal.update(
                 request.title(),
                 request.startDate(),
@@ -81,13 +81,22 @@ public class MemberGoalService {
 
     @Transactional
     public void deleteGoal(Long memberId, Long goalId) {
-        MemberGoal goal = getOwnedGoal(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
         eventPublisher.publishEvent(new MemberGoalDeletedEvent(goalId));
         memberGoalRepository.delete(goal);
     }
 
     private MemberGoal getOwnedGoal(Long memberId, Long goalId) {
         MemberGoal goal = memberGoalRepository.findById(goalId)
+                .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
+        if (!goal.isOwnedBy(memberId)) {
+            throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
+        }
+        return goal;
+    }
+
+    private MemberGoal getOwnedGoalForUpdate(Long memberId, Long goalId) {
+        MemberGoal goal = memberGoalRepository.findByIdForUpdate(goalId)
                 .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
         if (!goal.isOwnedBy(memberId)) {
             throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);

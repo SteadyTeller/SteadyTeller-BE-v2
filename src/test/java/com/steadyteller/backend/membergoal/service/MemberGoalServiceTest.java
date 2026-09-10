@@ -77,12 +77,30 @@ class MemberGoalServiceTest {
                 .memberId(memberId).title("Java").startDate(LocalDate.of(2026, 2, 1))
                 .targetDate(LocalDate.of(2026, 2, 2)).currentLevel("BEGINNER")
                 .dailyStudyHours(1).availableDays(List.of("MON")).focusArea("backend").build();
-        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
 
         memberGoalService.deleteGoal(memberId, goalId);
 
         verify(eventPublisher).publishEvent(new MemberGoalDeletedEvent(goalId));
         verify(memberGoalRepository).delete(goal);
+    }
+
+    @Test
+    void updateGoalUsesPessimisticLockAndUpdatesEntity() {
+        Long memberId = 1L;
+        Long goalId = 10L;
+        MemberGoal goal = MemberGoal.builder()
+                .memberId(memberId).title("Java").startDate(LocalDate.of(2026, 2, 1))
+                .targetDate(LocalDate.of(2026, 2, 2)).currentLevel("BEGINNER")
+                .dailyStudyHours(1).availableDays(List.of("MON")).focusArea("backend").build();
+        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
+
+        MemberStudyInfoRequestDto updateRequest = request(
+                LocalDate.now().plusDays(1), LocalDate.now().plusDays(10), List.of("TUE", "THU")
+        );
+        memberGoalService.updateGoal(memberId, goalId, updateRequest);
+
+        verify(memberGoalRepository).findByIdForUpdate(goalId);
     }
 
     private MemberStudyInfoRequestDto request(LocalDate start, LocalDate target, List<String> days) {
