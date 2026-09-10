@@ -17,7 +17,7 @@ public record LearningTaskCandidateResponseDto(
 ) {
     public static LearningTaskCandidateResponseDto from(LearningTaskCandidate candidate) {
         return new LearningTaskCandidateResponseDto(
-                candidate.getCandidateId(),
+                candidate.getId(),
                 candidate.getGoalId(),
                 candidate.getTitle(),
                 candidate.getCategory(),

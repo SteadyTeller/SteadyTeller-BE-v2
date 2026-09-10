@@ -11,6 +11,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import com.steadyteller.backend.membergoal.event.MemberGoalDeletedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ public class MemberGoalService {
             Set.of("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN");
 
     private final MemberGoalRepository memberGoalRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public MemberGoalResponseDto createGoal(Long memberId, MemberStudyInfoRequestDto request) {
@@ -54,7 +57,7 @@ public class MemberGoalService {
     @Transactional
     public MemberGoalResponseDto updateGoal(Long memberId, Long goalId, MemberStudyInfoRequestDto request) {
         validateGoalRequest(request);
-        MemberGoal goal = getOwnedGoal(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
         goal.update(
                 request.title(),
                 request.startDate(),
@@ -78,12 +81,22 @@ public class MemberGoalService {
 
     @Transactional
     public void deleteGoal(Long memberId, Long goalId) {
-        MemberGoal goal = getOwnedGoal(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
+        eventPublisher.publishEvent(new MemberGoalDeletedEvent(goalId));
         memberGoalRepository.delete(goal);
     }
 
     private MemberGoal getOwnedGoal(Long memberId, Long goalId) {
         MemberGoal goal = memberGoalRepository.findById(goalId)
+                .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
+        if (!goal.isOwnedBy(memberId)) {
+            throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
+        }
+        return goal;
+    }
+
+    private MemberGoal getOwnedGoalForUpdate(Long memberId, Long goalId) {
+        MemberGoal goal = memberGoalRepository.findByIdForUpdate(goalId)
                 .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
         if (!goal.isOwnedBy(memberId)) {
             throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
