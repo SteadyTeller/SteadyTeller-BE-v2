@@ -49,6 +49,18 @@ class LearningTaskAiServiceTest {
     }
 
     @Test
+    void generateTasksRejectsAllocatedMinutesExceedingMax() {
+        // AI가 하루 최대치(1440분)를 초과하는 비정상적인 시간을 반환하면 예외를 던진다.
+        LearningTaskAiService service = new LearningTaskAiService(chatClient);
+        given(chatClient.prompt().user(anyString()).call()
+                .entity(any(ParameterizedTypeReference.class)))
+                .willReturn(List.of(new AiGeneratedTaskDto("title", "category", "subject", 3, 1441)));
+
+        assertThatThrownBy(() -> service.generateTasks(goal()))
+                .isInstanceOf(CustomException.class);
+    }
+
+    @Test
     void generateTasksWrapsAiClientFailure() {
         LearningTaskAiService service = new LearningTaskAiService(chatClient);
         given(chatClient.prompt().user(anyString()).call()

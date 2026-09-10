@@ -27,6 +27,7 @@ public record LearningTaskCandidateRequestDto(
 
         @NotNull
         @Positive
+        @Max(value = 1440, message = "학습 시간은 최대 1440분(24시간) 이하여야 합니다.")
         Integer allocatedMinutes
 ) {
 }

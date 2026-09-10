@@ -165,6 +165,23 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void throwsWhenConfirmedTaskHasAllocatedMinutesExceedingMax() {
+        // 검토 단계에서 사용자가 1440분을 초과하는 시간을 넣는 경우를 방어한다.
+        Long memberId = 1L;
+        Long goalId = 10L;
+        MemberGoal goal = goal(memberId, List.of("MON"));
+        LearningTask invalidTask = task(1L, "너무 긴 태스크", 1441);
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
+        given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
+                .willReturn(List.of(invalidTask));
+
+        assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.INVALID_LEARNING_TASK_DURATION);
+    }
+
+    @Test
     void throwsWhenDailyStudyHoursIsNullOrNonPositive() {
         Long memberId = 1L;
         Long goalId = 10L;
