@@ -12,17 +12,23 @@ import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import com.steadyteller.backend.membergoal.event.MemberGoalDeletedEvent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class MemberGoalServiceTest {
 
     @Mock
     private MemberGoalRepository memberGoalRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private MemberGoalService memberGoalService;
@@ -61,6 +67,22 @@ class MemberGoalServiceTest {
 
         assertThatThrownBy(() -> memberGoalService.createGoal(1L, request))
                 .isInstanceOf(CustomException.class);
+    }
+
+    @Test
+    void deleteGoalPublishesMemberGoalDeletedEventAndDeletesEntity() {
+        Long memberId = 1L;
+        Long goalId = 10L;
+        MemberGoal goal = MemberGoal.builder()
+                .memberId(memberId).title("Java").startDate(LocalDate.of(2026, 2, 1))
+                .targetDate(LocalDate.of(2026, 2, 2)).currentLevel("BEGINNER")
+                .dailyStudyHours(1).availableDays(List.of("MON")).focusArea("backend").build();
+        given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
+
+        memberGoalService.deleteGoal(memberId, goalId);
+
+        verify(eventPublisher).publishEvent(new MemberGoalDeletedEvent(goalId));
+        verify(memberGoalRepository).delete(goal);
     }
 
     private MemberStudyInfoRequestDto request(LocalDate start, LocalDate target, List<String> days) {

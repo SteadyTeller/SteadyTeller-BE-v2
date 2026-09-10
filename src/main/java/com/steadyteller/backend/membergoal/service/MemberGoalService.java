@@ -11,6 +11,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import com.steadyteller.backend.membergoal.event.MemberGoalDeletedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ public class MemberGoalService {
             Set.of("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN");
 
     private final MemberGoalRepository memberGoalRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public MemberGoalResponseDto createGoal(Long memberId, MemberStudyInfoRequestDto request) {
@@ -79,6 +82,7 @@ public class MemberGoalService {
     @Transactional
     public void deleteGoal(Long memberId, Long goalId) {
         MemberGoal goal = getOwnedGoal(memberId, goalId);
+        eventPublisher.publishEvent(new MemberGoalDeletedEvent(goalId));
         memberGoalRepository.delete(goal);
     }
 
