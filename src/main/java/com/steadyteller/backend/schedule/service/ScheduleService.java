@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 목표 삭제(deleteGoal) 및 태스크 확정(confirmTasks)과의 동시성 경합 시 고아 데이터 발생 및 참조 무결성 파괴를 원천 방지한다.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ScheduleService {
@@ -51,9 +53,11 @@ public class ScheduleService {
     @Transactional
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
         MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
+        log.info("Schedule generation started: memberId={}, goalId={}, title={}", memberId, goalId, goal.getTitle());
         List<LearningTask> confirmedTasks =
                 learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
         if (confirmedTasks.isEmpty()) {
+            log.warn("Schedule generation rejected: no confirmed pending tasks. goalId={}", goalId);
             throw new CustomException(ScheduleErrorCode.NO_CONFIRMED_TASKS);
         }
         validateAllocatedMinutes(confirmedTasks);
@@ -65,6 +69,8 @@ public class ScheduleService {
         List<ScheduleAllocator.AllocatedItem> allocations = scheduleAiService.generateSchedule(
                 goal, confirmedTasks, earliestStart, availableDays, dailyCapacityMinutes, MAX_HORIZON_DAYS
         );
+        log.info("Schedule allocation completed: goalId={}, taskCount={}, allocationCount={}, dailyCapacityMinutes={}",
+                goalId, confirmedTasks.size(), allocations.size(), dailyCapacityMinutes);
 
         Schedule schedule = scheduleRepository.save(Schedule.create(
                 memberId,
@@ -90,6 +96,8 @@ public class ScheduleService {
             task.markAsScheduled();
         }
 
+        log.info("Schedule generation completed: scheduleId={}, goalId={}, itemCount={}, startDate={}, endDate={}",
+                schedule.getId(), goalId, items.size(), schedule.getStartDate(), schedule.getEndDate());
         return ScheduleResponseDto.of(schedule, items);
     }
 

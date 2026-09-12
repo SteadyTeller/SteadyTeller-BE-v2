@@ -7,6 +7,7 @@ import com.steadyteller.backend.learningtask.exception.LearningTaskErrorCode;
 import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
  * LearningTaskService가 이를 후보(candidate)로 감싸서 캐시에 보관한다.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class LearningTaskAiService {
 
@@ -26,6 +28,7 @@ public class LearningTaskAiService {
 
     public List<AiGeneratedTaskDto> generateTasks(MemberGoal goal) {
         List<AiGeneratedTaskDto> tasks;
+        log.info("AI task generation started: goalId={}, title={}", goal.getId(), goal.getTitle());
         try {
             tasks = chatClient.prompt()
                     .user(buildPrompt(goal))
@@ -33,10 +36,12 @@ public class LearningTaskAiService {
                     .entity(new ParameterizedTypeReference<List<AiGeneratedTaskDto>>() {
                     });
         } catch (RuntimeException e) {
+            log.error("AI task generation failed: goalId={}, title={}", goal.getId(), goal.getTitle(), e);
             throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);
         }
 
         if (tasks == null || tasks.isEmpty()) {
+            log.warn("AI task generation returned an empty result: goalId={}", goal.getId());
             throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);
         }
         if (tasks.stream().anyMatch(task -> task == null
@@ -44,8 +49,10 @@ public class LearningTaskAiService {
                 || task.difficulty() == null || task.difficulty() < 1 || task.difficulty() > 5
                 || task.allocatedMinutes() == null || task.allocatedMinutes() <= 0
                 || task.allocatedMinutes() > MAX_ALLOCATED_MINUTES)) {
+            log.warn("AI task generation returned an invalid result: goalId={}, taskCount={}", goal.getId(), tasks.size());
             throw new CustomException(LearningTaskErrorCode.AI_GENERATION_FAILED);
         }
+        log.info("AI task generation completed: goalId={}, taskCount={}", goal.getId(), tasks.size());
         return tasks;
     }
 
