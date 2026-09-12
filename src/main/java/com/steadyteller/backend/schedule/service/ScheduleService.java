@@ -7,6 +7,7 @@ import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
+import com.steadyteller.backend.schedule.dto.ScheduleItemResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
@@ -183,6 +184,48 @@ public class ScheduleService {
         }
 
         return ScheduleResponseDto.of(schedule, items);
+    }
+
+    /**
+     * 스케줄 항목의 학습을 시작 상태(IN_PROGRESS)로 전환한다. 이미 완료(FINISHED)된 항목은
+     * 시작 상태로 되돌아가지 않는다(멱등하게 그대로 FINISHED 유지).
+     */
+    @Transactional
+    public ScheduleItemResponseDto startScheduleItem(Long memberId, Long scheduleId, Long itemId) {
+        getOwnedSchedule(memberId, scheduleId);
+        ScheduleItem item = getOwnedScheduleItem(scheduleId, itemId);
+        item.start();
+        return ScheduleItemResponseDto.from(item);
+    }
+
+    /**
+     * 스케줄 항목의 학습 수행을 완료 처리한다. 통계(완료율/목표 진행률)는 이 status를 조회만 해서 계산하므로,
+     * 이 메서드가 유일한 쓰기 경로다. 완료는 기본적으로 단방향이며, 이미 FINISHED인 항목에 다시 요청해도
+     * 동일한 결과로 멱등하게 처리한다(중복 요청/네트워크 재시도에도 에러 없이 안전).
+     */
+    @Transactional
+    public ScheduleItemResponseDto completeScheduleItem(Long memberId, Long scheduleId, Long itemId) {
+        getOwnedSchedule(memberId, scheduleId);
+        ScheduleItem item = getOwnedScheduleItem(scheduleId, itemId);
+        item.finish();
+        return ScheduleItemResponseDto.from(item);
+    }
+
+    /**
+     * 완료를 잘못 누른 경우를 위한 취소(원복) 경로. 정상 흐름에서는 쓰이지 않는 예외 처리용이라
+     * completeScheduleItem과 별도 메서드/엔드포인트로 둔다.
+     */
+    @Transactional
+    public ScheduleItemResponseDto revertScheduleItemCompletion(Long memberId, Long scheduleId, Long itemId) {
+        getOwnedSchedule(memberId, scheduleId);
+        ScheduleItem item = getOwnedScheduleItem(scheduleId, itemId);
+        item.revertCompletion();
+        return ScheduleItemResponseDto.from(item);
+    }
+
+    private ScheduleItem getOwnedScheduleItem(Long scheduleId, Long itemId) {
+        return scheduleItemRepository.findByIdAndScheduleId(itemId, scheduleId)
+                .orElseThrow(() -> new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_NOT_FOUND));
     }
 
     private void renumberOrderForDate(List<ScheduleItem> allItems, LocalDate date, ScheduleItem appendLast) {
