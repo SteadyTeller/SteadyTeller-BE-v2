@@ -15,9 +15,12 @@ import com.steadyteller.backend.member.repository.MemberRepository;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.schedule.entity.Schedule;
+import com.steadyteller.backend.schedule.entity.ScheduleItem;
+import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -184,5 +187,48 @@ class ScheduleServiceConcurrencyTest {
         // 3) 모든 학습 태스크의 상태가 SCHEDULED 로 정상 전이되었어야 함
         List<LearningTask> updatedTasks = learningTaskRepository.findAll();
         assertThat(updatedTasks).allMatch(t -> t.getStatus() == LearningTaskStatus.SCHEDULED);
+    }
+
+    @Test
+    @DisplayName("start와 complete 요청이 동시에 경합해도 비관적 락에 의해 최종 상태는 항상 FINISHED로 보장된다")
+    void concurrentStartAndCompleteGuaranteesFinishedStatus() throws InterruptedException, ExecutionException {
+        // Given: 스케줄 및 PENDING 상태의 스케줄 항목 1개 생성
+        Schedule schedule = scheduleRepository.save(
+                Schedule.create(memberId, goalId, LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 16)));
+        ScheduleItem item = scheduleItemRepository.save(
+                ScheduleItem.create(schedule, 100L, "동시성 테스트 항목", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1));
+
+        int threadCount = 2;
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+
+        // When: 쓰레드 1은 complete 호출, 쓰레드 2는 start 호출 (동시 시작)
+        Future<?> completeFuture = executorService.submit(() -> {
+            try {
+                startLatch.await();
+                scheduleService.completeScheduleItem(memberId, schedule.getId(), item.getId());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        Future<?> startFuture = executorService.submit(() -> {
+            try {
+                startLatch.await();
+                scheduleService.startScheduleItem(memberId, schedule.getId(), item.getId());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        startLatch.countDown(); // 동시 릴리즈
+
+        completeFuture.get();
+        startFuture.get();
+        executorService.shutdown();
+
+        // Then: 어떤 순서로 락을 획득하든 최종 DB 상태는 반드시 FINISHED 여야 함
+        ScheduleItem updatedItem = scheduleItemRepository.findById(item.getId()).orElseThrow();
+        assertThat(updatedItem.getStatus()).isEqualTo(ScheduleItemStatus.FINISHED);
     }
 }

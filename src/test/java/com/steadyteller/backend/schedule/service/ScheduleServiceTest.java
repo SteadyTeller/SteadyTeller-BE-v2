@@ -510,12 +510,31 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void updateScheduleItemThrowsWhenItemIsAlreadyFinished() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        MemberGoal goal = goal(memberId, List.of("MON", "WED", "FRI"));
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.finish();
+        given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+
+        assertThatThrownBy(() -> scheduleService.updateScheduleItem(
+                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 16), null)
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ITEM_ALREADY_FINISHED);
+    }
+
+    @Test
     void startScheduleItemMarksItemAsInProgress() {
         Long memberId = 1L;
         Schedule schedule = schedule(100L, memberId, 10L);
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByIdAndScheduleId(1001L, 100L)).willReturn(Optional.of(item));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
 
         ScheduleItemResponseDto response = scheduleService.startScheduleItem(memberId, 100L, 1001L);
 
@@ -529,7 +548,7 @@ class ScheduleServiceTest {
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         item.finish();
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByIdAndScheduleId(1001L, 100L)).willReturn(Optional.of(item));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
 
         ScheduleItemResponseDto response = scheduleService.startScheduleItem(memberId, 100L, 1001L);
 
@@ -542,7 +561,7 @@ class ScheduleServiceTest {
         Schedule schedule = schedule(100L, memberId, 10L);
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByIdAndScheduleId(1001L, 100L)).willReturn(Optional.of(item));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
 
         ScheduleItemResponseDto response = scheduleService.completeScheduleItem(memberId, 100L, 1001L);
 
@@ -557,7 +576,7 @@ class ScheduleServiceTest {
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         item.finish();
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByIdAndScheduleId(1001L, 100L)).willReturn(Optional.of(item));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
 
         ScheduleItemResponseDto response = scheduleService.completeScheduleItem(memberId, 100L, 1001L);
 
@@ -573,7 +592,7 @@ class ScheduleServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
-        verify(scheduleItemRepository, never()).findByIdAndScheduleId(any(), any());
+        verify(scheduleItemRepository, never()).findByIdAndScheduleIdForUpdate(any(), any());
     }
 
     @Test
@@ -581,7 +600,7 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         Schedule schedule = schedule(100L, memberId, 10L);
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByIdAndScheduleId(9999L, 100L)).willReturn(Optional.empty());
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(9999L, 100L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> scheduleService.completeScheduleItem(memberId, 100L, 9999L))
                 .isInstanceOf(CustomException.class)
@@ -596,7 +615,36 @@ class ScheduleServiceTest {
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         item.finish();
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByIdAndScheduleId(1001L, 100L)).willReturn(Optional.of(item));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.revertScheduleItemCompletion(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.PENDING);
+        assertThat(item.getStatus()).isEqualTo(ScheduleItemStatus.PENDING);
+    }
+
+    @Test
+    void revertScheduleItemCompletionDoesNotChangeInProgressItem() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.start();
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.revertScheduleItemCompletion(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.IN_PROGRESS);
+        assertThat(item.getStatus()).isEqualTo(ScheduleItemStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void revertScheduleItemCompletionDoesNotChangePendingItem() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
 
         ScheduleItemResponseDto response = scheduleService.revertScheduleItemCompletion(memberId, 100L, 1001L);
 
@@ -613,7 +661,7 @@ class ScheduleServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
-        verify(scheduleItemRepository, never()).findByIdAndScheduleId(any(), any());
+        verify(scheduleItemRepository, never()).findByIdAndScheduleIdForUpdate(any(), any());
     }
 
     private Schedule schedule(Long id, Long memberId, Long goalId) {

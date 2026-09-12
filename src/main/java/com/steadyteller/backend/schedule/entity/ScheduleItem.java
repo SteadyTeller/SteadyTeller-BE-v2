@@ -122,9 +122,13 @@ public class ScheduleItem extends BaseTimeEntity {
 
     /**
      * 완료를 잘못 누른 경우 등 예외적으로 완료 처리를 취소할 때 호출한다.
-     * PENDING/IN_PROGRESS 상태에 호출해도 결과적으로 미완료 상태이므로(멱등) 별도 상태 검증을 하지 않는다.
+     * FINISHED 상태인 항목만 PENDING으로 전이하며, PENDING/IN_PROGRESS 상태에서 호출되면
+     * 상태를 변경하지 않고 현재 상태를 유지한다 (중복/지연된 완료 취소 요청에 의한 회귀 방지).
      */
     public void revertCompletion() {
+        if (this.status != ScheduleItemStatus.FINISHED) {
+            return;
+        }
         this.status = ScheduleItemStatus.PENDING;
     }
 }
