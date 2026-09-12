@@ -21,5 +21,9 @@ public interface ScheduleItemRepository extends JpaRepository<ScheduleItem, Long
     @Query("SELECT si FROM ScheduleItem si WHERE si.id = :id AND si.schedule.id = :scheduleId")
     Optional<ScheduleItem> findByIdAndScheduleIdForUpdate(@Param("id") Long id, @Param("scheduleId") Long scheduleId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT si FROM ScheduleItem si WHERE si.schedule.id = :scheduleId ORDER BY si.date ASC, si.orderIndex ASC")
+    List<ScheduleItem> findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(@Param("scheduleId") Long scheduleId);
+
     long countByScheduleId(Long scheduleId);
 }

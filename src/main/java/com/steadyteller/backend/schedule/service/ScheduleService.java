@@ -121,7 +121,7 @@ public class ScheduleService {
     @Transactional
     public void deleteSchedule(Long memberId, Long scheduleId) {
         Schedule schedule = getOwnedSchedule(memberId, scheduleId);
-        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(scheduleId);
+        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
         List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId).toList();
         if (!taskIds.isEmpty()) {
             List<LearningTask> tasks = learningTaskRepository.findAllById(taskIds);
@@ -139,6 +139,7 @@ public class ScheduleService {
     /**
      * 스케줄 항목 하나의 수행 날짜/시간대를 수동으로 재배치한다 (CRUD의 Update).
      * status(학습 수행 상태) 변경은 별도 단계(학습 수행) 소관이라 여기서 다루지 않는다.
+     * 동시 완료 처리(completeScheduleItem)와의 상태 유실(Lost Update)을 방지하기 위해 비관적 락으로 조회한다.
      */
     @Transactional
     public ScheduleResponseDto updateScheduleItem(
@@ -148,7 +149,7 @@ public class ScheduleService {
         MemberGoal goal = memberGoalRepository.findById(schedule.getGoalId())
                 .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
 
-        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(scheduleId);
+        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
         ScheduleItem target = items.stream()
                 .filter(item -> item.getId().equals(itemId))
                 .findFirst()

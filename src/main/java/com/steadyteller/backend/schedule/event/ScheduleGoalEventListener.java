@@ -31,7 +31,7 @@ public class ScheduleGoalEventListener {
         List<Schedule> schedules = scheduleRepository.findByGoalIdOrderByStartDateDesc(event.goalId());
         for (Schedule schedule : schedules) {
             List<ScheduleItem> items =
-                    scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(schedule.getId());
+                    scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(schedule.getId());
             scheduleItemRepository.deleteAll(items);
             scheduleItemRepository.flush();
             scheduleRepository.delete(schedule);

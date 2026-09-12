@@ -39,7 +39,7 @@ class ScheduleGoalEventListenerTest {
                 schedule1, 1L, "항목", LocalDate.of(2026, 9, 1), DayOfWeek.TUESDAY, 30, 1);
 
         given(scheduleRepository.findByGoalIdOrderByStartDateDesc(goalId)).willReturn(List.of(schedule1));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
 
         listener.handleGoalDeleted(new MemberGoalDeletedEvent(goalId));
 
