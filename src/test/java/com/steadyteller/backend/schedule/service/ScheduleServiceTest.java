@@ -18,11 +18,13 @@ import com.steadyteller.backend.membergoal.entity.MemberGoal;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.schedule.dto.DailyScheduleDto;
+import com.steadyteller.backend.schedule.dto.ScheduleItemResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
+import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
@@ -316,7 +318,7 @@ class ScheduleServiceTest {
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
 
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
         given(learningTaskRepository.findAllById(List.of(1L))).willReturn(List.of(scheduledTask));
 
         scheduleService.deleteSchedule(memberId, 100L);
@@ -352,7 +354,7 @@ class ScheduleServiceTest {
         ScheduleItem wednesdayFirst = scheduleItem(1003L, schedule, 3L, "SQL 기초", LocalDate.of(2026, 9, 16), DayOfWeek.WEDNESDAY, 20, 1);
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L))
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(mondayFirst, mondaySecond, wednesdayFirst));
 
         LocalDate wednesday = LocalDate.of(2026, 9, 16);
@@ -380,7 +382,7 @@ class ScheduleServiceTest {
         ScheduleItem mondayOnly = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 20, 1);
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L))
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(mondayOnly));
 
         LocalDate friday = LocalDate.of(2026, 9, 18);
@@ -400,7 +402,7 @@ class ScheduleServiceTest {
         ScheduleItem existingOnWednesday = scheduleItem(1002L, schedule, 2L, "SQL", LocalDate.of(2026, 9, 16), DayOfWeek.WEDNESDAY, 30, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L))
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(moving, existingOnWednesday));
 
         LocalDate wednesday = LocalDate.of(2026, 9, 16);
@@ -422,7 +424,7 @@ class ScheduleServiceTest {
         ScheduleItem second = scheduleItem(1002L, schedule, 2L, "정규화 심화", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 20, 2);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L))
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(first, second));
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
@@ -441,7 +443,7 @@ class ScheduleServiceTest {
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
                 memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.now().minusDays(1), null)
@@ -459,7 +461,7 @@ class ScheduleServiceTest {
         ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of(item));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
                 memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 15), null)
@@ -478,7 +480,7 @@ class ScheduleServiceTest {
         ScheduleItem existingOnWednesday = scheduleItem(1002L, schedule, 2L, "SQL", LocalDate.of(2026, 9, 16), DayOfWeek.WEDNESDAY, 50, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L))
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(moving, existingOnWednesday));
 
         // 30(moving) + 50(existing) = 80분 > 60분 한도
@@ -497,7 +499,7 @@ class ScheduleServiceTest {
         Schedule schedule = schedule(100L, memberId, 10L);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
-        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(100L)).willReturn(List.of());
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of());
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
                 memberId, 100L, 9999L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 14), null)
@@ -505,6 +507,161 @@ class ScheduleServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ScheduleErrorCode.SCHEDULE_ITEM_NOT_FOUND);
+    }
+
+    @Test
+    void updateScheduleItemThrowsWhenItemIsAlreadyFinished() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        MemberGoal goal = goal(memberId, List.of("MON", "WED", "FRI"));
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.finish();
+        given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
+
+        assertThatThrownBy(() -> scheduleService.updateScheduleItem(
+                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 16), null)
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ITEM_ALREADY_FINISHED);
+    }
+
+    @Test
+    void startScheduleItemMarksItemAsInProgress() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.startScheduleItem(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void startScheduleItemDoesNotRevertAnAlreadyFinishedItem() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.finish();
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.startScheduleItem(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.FINISHED);
+    }
+
+    @Test
+    void completeScheduleItemMarksItemAsFinished() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.completeScheduleItem(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.FINISHED);
+        assertThat(item.getStatus()).isEqualTo(ScheduleItemStatus.FINISHED);
+    }
+
+    @Test
+    void completeScheduleItemIsIdempotentWhenAlreadyFinished() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.finish();
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.completeScheduleItem(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.FINISHED);
+    }
+
+    @Test
+    void completeScheduleItemThrowsWhenNotOwnedByMember() {
+        Schedule schedule = schedule(100L, 2L, 10L);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+
+        assertThatThrownBy(() -> scheduleService.completeScheduleItem(1L, 100L, 1001L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
+        verify(scheduleItemRepository, never()).findByIdAndScheduleIdForUpdate(any(), any());
+    }
+
+    @Test
+    void completeScheduleItemThrowsWhenItemNotFound() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(9999L, 100L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> scheduleService.completeScheduleItem(memberId, 100L, 9999L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ITEM_NOT_FOUND);
+    }
+
+    @Test
+    void revertScheduleItemCompletionResetsFinishedItemToPending() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.finish();
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.revertScheduleItemCompletion(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.PENDING);
+        assertThat(item.getStatus()).isEqualTo(ScheduleItemStatus.PENDING);
+    }
+
+    @Test
+    void revertScheduleItemCompletionDoesNotChangeInProgressItem() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        item.start();
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.revertScheduleItemCompletion(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.IN_PROGRESS);
+        assertThat(item.getStatus()).isEqualTo(ScheduleItemStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void revertScheduleItemCompletionDoesNotChangePendingItem() {
+        Long memberId = 1L;
+        Schedule schedule = schedule(100L, memberId, 10L);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByIdAndScheduleIdForUpdate(1001L, 100L)).willReturn(Optional.of(item));
+
+        ScheduleItemResponseDto response = scheduleService.revertScheduleItemCompletion(memberId, 100L, 1001L);
+
+        assertThat(response.status()).isEqualTo(ScheduleItemStatus.PENDING);
+        assertThat(item.getStatus()).isEqualTo(ScheduleItemStatus.PENDING);
+    }
+
+    @Test
+    void revertScheduleItemCompletionThrowsWhenNotOwnedByMember() {
+        Schedule schedule = schedule(100L, 2L, 10L);
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+
+        assertThatThrownBy(() -> scheduleService.revertScheduleItemCompletion(1L, 100L, 1001L))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_ACCESS_DENIED);
+        verify(scheduleItemRepository, never()).findByIdAndScheduleIdForUpdate(any(), any());
     }
 
     private Schedule schedule(Long id, Long memberId, Long goalId) {

@@ -100,4 +100,35 @@ public class ScheduleItem extends BaseTimeEntity {
     public void updateOrderIndex(int orderIndex) {
         this.orderIndex = orderIndex;
     }
+
+    /**
+     * 사용자가 이 항목의 학습을 시작했을 때 호출한다. 이미 FINISHED인 항목을 다시 시작 상태로 되돌리지는
+     * 않는다(완료 취소는 revertCompletion의 소관) — 시작은 완료 이전 단계에서만 의미가 있는 전이다.
+     */
+    public void start() {
+        if (this.status == ScheduleItemStatus.FINISHED) {
+            return;
+        }
+        this.status = ScheduleItemStatus.IN_PROGRESS;
+    }
+
+    /**
+     * 사용자가 이 항목의 학습을 완료했을 때 호출한다. 완료는 기본적으로 되돌릴 수 없는 단방향 전이이며,
+     * 이미 FINISHED인 항목에 다시 호출해도 상태는 그대로이므로(멱등) 별도 상태 검증을 하지 않는다.
+     */
+    public void finish() {
+        this.status = ScheduleItemStatus.FINISHED;
+    }
+
+    /**
+     * 완료를 잘못 누른 경우 등 예외적으로 완료 처리를 취소할 때 호출한다.
+     * FINISHED 상태인 항목만 PENDING으로 전이하며, PENDING/IN_PROGRESS 상태에서 호출되면
+     * 상태를 변경하지 않고 현재 상태를 유지한다 (중복/지연된 완료 취소 요청에 의한 회귀 방지).
+     */
+    public void revertCompletion() {
+        if (this.status != ScheduleItemStatus.FINISHED) {
+            return;
+        }
+        this.status = ScheduleItemStatus.PENDING;
+    }
 }

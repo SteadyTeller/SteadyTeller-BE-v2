@@ -1,6 +1,7 @@
 package com.steadyteller.backend.schedule.controller;
 
 import com.steadyteller.backend.global.common.ApiResponse;
+import com.steadyteller.backend.schedule.dto.ScheduleItemResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
@@ -76,6 +77,42 @@ public class ScheduleController {
         return ResponseEntity.ok(ApiResponse.success(
                 "스케줄 항목이 재배치되었습니다.",
                 scheduleService.updateScheduleItem(memberId, scheduleId, itemId, request)
+        ));
+    }
+
+    @PatchMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/start")
+    public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> startScheduleItem(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long scheduleId,
+            @PathVariable Long itemId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "스케줄 항목 학습을 시작했습니다.",
+                scheduleService.startScheduleItem(memberId, scheduleId, itemId)
+        ));
+    }
+
+    @PatchMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/complete")
+    public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> completeScheduleItem(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long scheduleId,
+            @PathVariable Long itemId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "스케줄 항목을 완료 처리했습니다.",
+                scheduleService.completeScheduleItem(memberId, scheduleId, itemId)
+        ));
+    }
+
+    @DeleteMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/complete")
+    public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> revertScheduleItemCompletion(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long scheduleId,
+            @PathVariable Long itemId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "스케줄 항목의 완료 처리를 취소했습니다.",
+                scheduleService.revertScheduleItemCompletion(memberId, scheduleId, itemId)
         ));
     }
 }
