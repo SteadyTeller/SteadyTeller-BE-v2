@@ -6,8 +6,8 @@ import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
+import com.steadyteller.backend.schedule.service.ScheduleService;
 import com.steadyteller.backend.statistics.port.dto.StudyStatisticsRow;
-import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +30,7 @@ class StatisticsJpaQueryAdapterTest {
     private ScheduleItemRepository scheduleItemRepository;
 
     @Autowired
-    private EntityManager entityManager;
+    private ScheduleService scheduleService;
 
     @Test
     @DisplayName("회원과 기간에 해당하는 스케줄 항목만 통계 데이터로 조회한다")
@@ -51,16 +51,13 @@ class StatisticsJpaQueryAdapterTest {
     }
 
     @Test
-    @DisplayName("FINISHED 스케줄 항목을 완료된 통계 데이터로 변환한다")
-    void mapsFinishedItemToCompletedRow() {
+    @DisplayName("학습 완료 처리된 스케줄 항목을 완료된 통계 데이터로 변환한다")
+    void mapsCompletedScheduleItemToStatistics() {
         LocalDate date = LocalDate.of(2026, 9, 10);
         Schedule schedule = saveSchedule(1L, 10L, date);
         ScheduleItem item = saveItem(schedule, 101L, date, 45);
-        entityManager.flush();
-        entityManager.createNativeQuery("UPDATE schedule_item SET status = 'FINISHED' WHERE id = :id")
-                .setParameter("id", item.getId())
-                .executeUpdate();
-        entityManager.clear();
+
+        scheduleService.completeScheduleItem(1L, schedule.getId(), item.getId());
 
         List<StudyStatisticsRow> rows = adapter.findByMemberIdAndGoalId(1L, 10L);
 
