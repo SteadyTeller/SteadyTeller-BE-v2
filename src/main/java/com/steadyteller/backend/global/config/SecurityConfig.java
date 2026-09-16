@@ -2,9 +2,12 @@ package com.steadyteller.backend.global.config;
 
 import com.steadyteller.backend.global.security.JwtAuthenticationFilter;
 import com.steadyteller.backend.global.security.RestAuthenticationEntryPoint;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -14,6 +17,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -23,9 +29,26 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
 
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    // 프론트엔드(SteadyTeller-FE)가 배포 환경에서 백엔드 오리진으로 직접 요청할 수 있도록 허용한다.
+    // 로컬 개발은 Vite dev server의 proxy를 쓰므로 영향받지 않는다.
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOriginPatterns(List.of(allowedOrigins.split(",")));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     @Bean
@@ -44,12 +67,16 @@ public class SecurityConfig {
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(restAuthenticationEntryPoint)
                 )
-                
+
                 // H2 콘솔 접근을 위한 설정 (Iframe 허용)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
 
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
                 // 권한 규칙 설정
                 .authorizeHttpRequests(auth -> auth
+                        // 브라우저가 보내는 CORS 프리플라이트 요청은 인증 없이 통과시켜야 한다.
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // Swagger UI 및 H2 콘솔은 인증 없이 누구나 접근 가능하도록 허용
                         .requestMatchers(
                                 "/swagger-ui/**",
