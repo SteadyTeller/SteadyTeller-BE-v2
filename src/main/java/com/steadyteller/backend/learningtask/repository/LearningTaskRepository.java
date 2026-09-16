@@ -12,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface LearningTaskRepository extends JpaRepository<LearningTask, Long> {
 
+    List<LearningTask> findByGoalIdOrderByIdAsc(Long goalId);
+
     List<LearningTask> findByGoalIdAndStatus(Long goalId, LearningTaskStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

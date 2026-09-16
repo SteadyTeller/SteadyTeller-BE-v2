@@ -48,6 +48,14 @@ public class LearningTaskController {
         return ResponseEntity.ok(ApiResponse.success(learningTaskService.getCandidates(memberId, goalId)));
     }
 
+    // 확정된 태스크 목록 조회. 확정 뒤 후보 목록은 비워지므로, 할 일 목록 화면은 이 API를 사용한다.
+    @GetMapping("/goals/{goalId}/tasks/confirmed")
+    public ResponseEntity<ApiResponse<List<LearningTaskResponseDto>>> getConfirmedTasks(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long goalId) {
+        return ResponseEntity.ok(ApiResponse.success(learningTaskService.getConfirmedTasks(memberId, goalId)));
+    }
+
     // 사용자가 후보 목록에 태스크를 직접 추가 (source=USER_ADDED)
     @PostMapping("/goals/{goalId}/tasks")
     public ResponseEntity<ApiResponse<LearningTaskCandidateResponseDto>> addCandidate(

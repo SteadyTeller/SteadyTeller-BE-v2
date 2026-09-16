@@ -93,6 +93,7 @@ FINISHED      // 완료
 | Method | Endpoint | 설명 |
 |---|---|---|
 | GET | `/goals/{goalId}/tasks` | 검토 대상 태스크(후보) 목록 조회 |
+| GET | `/goals/{goalId}/tasks/confirmed` | 확정된 태스크 목록 조회 (확정 후 할 일 목록 표시용) |
 | PATCH | `/tasks/{taskId}` | 후보 태스크 내용 수정 (저장 시 isModified=true로 반영) |
 | DELETE | `/tasks/{taskId}` | 후보 목록에서 제거 (=거부. DB에 저장된 적 없으므로 소프트 삭제 불필요, 그냥 후보에서 빠짐) |
 | POST | `/goals/{goalId}/tasks` | 사용자가 후보 목록에 직접 태스크 추가 (source=USER_ADDED) |

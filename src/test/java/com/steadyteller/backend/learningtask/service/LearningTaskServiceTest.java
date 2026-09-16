@@ -1,6 +1,7 @@
 package com.steadyteller.backend.learningtask.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -73,5 +74,24 @@ class LearningTaskServiceTest {
         verify(learningTaskRepository).deleteAll(List.of(existingTask));
         verify(learningTaskRepository).saveAll(org.mockito.ArgumentMatchers.anyList());
         verify(candidateRepository).deleteByGoalId(10L);
+    }
+
+    @Test
+    void getConfirmedTasksReturnsSavedTasksAfterConfirmation() {
+        MemberGoal goal = MemberGoal.builder()
+                .memberId(1L).title("Java").startDate(LocalDate.now())
+                .targetDate(LocalDate.now().plusDays(1)).currentLevel("BEGINNER")
+                .dailyStudyHours(1).availableDays(List.of("MON")).focusArea("backend").build();
+        LearningTask task = LearningTask.builder()
+                .goalId(10L).title("Spring").category("backend").subject("Spring MVC")
+                .difficulty(3).allocatedMinutes(30).source(LearningTaskSource.AI_GENERATED)
+                .isModified(false).build();
+
+        given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
+        given(learningTaskRepository.findByGoalIdOrderByIdAsc(10L)).willReturn(List.of(task));
+
+        assertThat(learningTaskService.getConfirmedTasks(1L, 10L))
+                .extracting(response -> response.title())
+                .containsExactly("Spring");
     }
 }

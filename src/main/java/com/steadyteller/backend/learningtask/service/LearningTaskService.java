@@ -72,6 +72,18 @@ public class LearningTaskService {
                 .toList();
     }
 
+    /**
+     * 확정된 태스크 목록을 조회한다. 확정 후에는 후보 목록이 삭제되므로, 화면에서
+     * 확정 결과를 다시 표시할 때는 후보 조회 API 대신 이 메서드를 사용해야 한다.
+     */
+    @Transactional(readOnly = true)
+    public List<LearningTaskResponseDto> getConfirmedTasks(Long memberId, Long goalId) {
+        getOwnedGoal(memberId, goalId);
+        return learningTaskRepository.findByGoalIdOrderByIdAsc(goalId).stream()
+                .map(LearningTaskResponseDto::from)
+                .toList();
+    }
+
     @Transactional
     public LearningTaskCandidateResponseDto addUserCandidate(Long memberId, Long goalId,
                                                                LearningTaskCandidateRequestDto request) {
