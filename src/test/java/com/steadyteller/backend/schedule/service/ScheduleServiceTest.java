@@ -30,6 +30,7 @@ import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -349,15 +350,16 @@ class ScheduleServiceTest {
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON", "WED"));
         Schedule schedule = schedule(100L, memberId, goalId);
-        ScheduleItem mondayFirst = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 20, 1);
-        ScheduleItem mondaySecond = scheduleItem(1002L, schedule, 2L, "정규화 심화", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 20, 2);
-        ScheduleItem wednesdayFirst = scheduleItem(1003L, schedule, 3L, "SQL 기초", LocalDate.of(2026, 9, 16), DayOfWeek.WEDNESDAY, 20, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate wednesday = monday.plusDays(2);
+        ScheduleItem mondayFirst = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 20, 1);
+        ScheduleItem mondaySecond = scheduleItem(1002L, schedule, 2L, "정규화 심화", monday, DayOfWeek.MONDAY, 20, 2);
+        ScheduleItem wednesdayFirst = scheduleItem(1003L, schedule, 3L, "SQL 기초", wednesday, DayOfWeek.WEDNESDAY, 20, 1);
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(mondayFirst, mondaySecond, wednesdayFirst));
 
-        LocalDate wednesday = LocalDate.of(2026, 9, 16);
         ScheduleResponseDto response = scheduleService.updateScheduleItem(
                 memberId, 100L, 1002L, new ScheduleItemUpdateRequestDto(wednesday, null)
         );
@@ -379,13 +381,14 @@ class ScheduleServiceTest {
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON", "WED", "FRI"));
         Schedule schedule = schedule(100L, memberId, goalId);
-        ScheduleItem mondayOnly = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 20, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate friday = monday.plusDays(4);
+        ScheduleItem mondayOnly = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 20, 1);
         given(memberGoalRepository.findById(goalId)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(mondayOnly));
 
-        LocalDate friday = LocalDate.of(2026, 9, 18);
         scheduleService.updateScheduleItem(memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(friday, null));
 
         assertThat(mondayOnly.getDate()).isEqualTo(friday);
@@ -398,14 +401,15 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         MemberGoal goal = goal(memberId, List.of("MON", "WED"));
         Schedule schedule = schedule(100L, memberId, 10L);
-        ScheduleItem moving = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
-        ScheduleItem existingOnWednesday = scheduleItem(1002L, schedule, 2L, "SQL", LocalDate.of(2026, 9, 16), DayOfWeek.WEDNESDAY, 30, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate wednesday = monday.plusDays(2);
+        ScheduleItem moving = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
+        ScheduleItem existingOnWednesday = scheduleItem(1002L, schedule, 2L, "SQL", wednesday, DayOfWeek.WEDNESDAY, 30, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(moving, existingOnWednesday));
 
-        LocalDate wednesday = LocalDate.of(2026, 9, 16);
         scheduleService.updateScheduleItem(memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(wednesday, null));
 
         assertThat(moving.getDate()).isEqualTo(wednesday);
@@ -420,15 +424,16 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         MemberGoal goal = goal(memberId, List.of("MON"));
         Schedule schedule = schedule(100L, memberId, 10L);
-        ScheduleItem first = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
-        ScheduleItem second = scheduleItem(1002L, schedule, 2L, "정규화 심화", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 20, 2);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        ScheduleItem first = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
+        ScheduleItem second = scheduleItem(1002L, schedule, 2L, "정규화 심화", monday, DayOfWeek.MONDAY, 20, 2);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
                 .willReturn(List.of(first, second));
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
-                memberId, 100L, 1002L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 14), 45)
+                memberId, 100L, 1002L, new ScheduleItemUpdateRequestDto(monday, 45)
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
@@ -440,7 +445,8 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         MemberGoal goal = goal(memberId, List.of("MON"));
         Schedule schedule = schedule(100L, memberId, 10L);
-        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
@@ -458,13 +464,15 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         MemberGoal goal = goal(memberId, List.of("MON")); // 화요일은 가용 요일 아님
         Schedule schedule = schedule(100L, memberId, 10L);
-        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate tuesday = monday.plusDays(1);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
-                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 15), null)
+                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(tuesday, null)
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
@@ -476,8 +484,10 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         MemberGoal goal = goal(memberId, List.of("MON", "WED")); // dailyStudyHours=1 -> 60분 한도
         Schedule schedule = schedule(100L, memberId, 10L);
-        ScheduleItem moving = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
-        ScheduleItem existingOnWednesday = scheduleItem(1002L, schedule, 2L, "SQL", LocalDate.of(2026, 9, 16), DayOfWeek.WEDNESDAY, 50, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate wednesday = monday.plusDays(2);
+        ScheduleItem moving = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
+        ScheduleItem existingOnWednesday = scheduleItem(1002L, schedule, 2L, "SQL", wednesday, DayOfWeek.WEDNESDAY, 50, 1);
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
@@ -485,7 +495,7 @@ class ScheduleServiceTest {
 
         // 30(moving) + 50(existing) = 80분 > 60분 한도
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
-                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 16), null)
+                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(wednesday, null)
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
@@ -501,8 +511,9 @@ class ScheduleServiceTest {
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of());
 
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
-                memberId, 100L, 9999L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 14), null)
+                memberId, 100L, 9999L, new ScheduleItemUpdateRequestDto(monday, null)
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
@@ -514,14 +525,16 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         Schedule schedule = schedule(100L, memberId, 10L);
         MemberGoal goal = goal(memberId, List.of("MON", "WED", "FRI"));
-        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate wednesday = monday.plusDays(2);
+        ScheduleItem item = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
         item.finish();
         given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
         given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
         given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L)).willReturn(List.of(item));
 
         assertThatThrownBy(() -> scheduleService.updateScheduleItem(
-                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 16), null)
+                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(wednesday, null)
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")

@@ -23,6 +23,7 @@ import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -194,10 +195,12 @@ class ScheduleServiceConcurrencyTest {
     @DisplayName("start와 complete 요청이 동시에 경합해도 비관적 락에 의해 최종 상태는 항상 FINISHED로 보장된다")
     void concurrentStartAndCompleteGuaranteesFinishedStatus() throws InterruptedException, ExecutionException {
         // Given: 스케줄 및 PENDING 상태의 스케줄 항목 1개 생성
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate wednesday = monday.plusDays(2);
         Schedule schedule = scheduleRepository.save(
-                Schedule.create(memberId, goalId, LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 16)));
+                Schedule.create(memberId, goalId, monday, wednesday));
         ScheduleItem item = scheduleItemRepository.save(
-                ScheduleItem.create(schedule, 100L, "동시성 테스트 항목", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1));
+                ScheduleItem.create(schedule, 100L, "동시성 테스트 항목", monday, DayOfWeek.MONDAY, 30, 1));
 
         int threadCount = 2;
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
@@ -237,10 +240,12 @@ class ScheduleServiceConcurrencyTest {
     @DisplayName("재배치(update)와 완료(complete) 요청이 동시에 경합해도 비관적 락에 의해 완료 상태가 유실되지 않는다")
     void concurrentUpdateAndCompleteGuaranteesFinishedStatus() throws InterruptedException, ExecutionException {
         // Given: 스케줄 및 월요일 PENDING 항목 1개 생성 (목표 가용 요일: MON, WED)
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        LocalDate wednesday = monday.plusDays(2);
         Schedule schedule = scheduleRepository.save(
-                Schedule.create(memberId, goalId, LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 16)));
+                Schedule.create(memberId, goalId, monday, wednesday));
         ScheduleItem item = scheduleItemRepository.save(
-                ScheduleItem.create(schedule, 100L, "재배치 경합 항목", LocalDate.of(2026, 9, 14), DayOfWeek.MONDAY, 30, 1));
+                ScheduleItem.create(schedule, 100L, "재배치 경합 항목", monday, DayOfWeek.MONDAY, 30, 1));
 
         int threadCount = 2;
         ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
@@ -261,7 +266,7 @@ class ScheduleServiceConcurrencyTest {
                 startLatch.await();
                 scheduleService.updateScheduleItem(
                         memberId, schedule.getId(), item.getId(),
-                        new ScheduleItemUpdateRequestDto(LocalDate.of(2026, 9, 16), 30)
+                        new ScheduleItemUpdateRequestDto(wednesday, 30)
                 );
             } catch (CustomException e) {
                 // complete가 먼저 실행된 경우 SCHEDULE_ITEM_ALREADY_FINISHED 예외가 발생할 수 있음 (정상 방어)
