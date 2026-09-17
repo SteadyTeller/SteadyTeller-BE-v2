@@ -63,7 +63,7 @@ public class Availability extends BaseTimeEntity {
                 .dayOfWeek(dayOfWeek)
                 .startTime(startTime)
                 .endTime(endTime)
-                .availableMinutes((int) Duration.between(startTime, endTime).toMinutes())
+                .availableMinutes(calculateAvailableMinutes(startTime, endTime))
                 .enabled(enabled)
                 .build();
     }
@@ -72,7 +72,13 @@ public class Availability extends BaseTimeEntity {
         this.dayOfWeek = dayOfWeek;
         this.startTime = startTime;
         this.endTime = endTime;
-        this.availableMinutes = (int) Duration.between(startTime, endTime).toMinutes();
+        this.availableMinutes = calculateAvailableMinutes(startTime, endTime);
         this.enabled = enabled;
+    }
+
+    /** 23:59 is the API-safe representation of the UI's inclusive 24:00 endpoint. */
+    private static int calculateAvailableMinutes(LocalTime startTime, LocalTime endTime) {
+        int minutes = (int) Duration.between(startTime, endTime).toMinutes();
+        return endTime.equals(LocalTime.of(23, 59)) ? minutes + 1 : minutes;
     }
 }

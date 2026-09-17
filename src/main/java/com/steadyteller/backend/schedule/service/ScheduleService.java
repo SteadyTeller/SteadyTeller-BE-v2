@@ -90,8 +90,8 @@ public class ScheduleService {
         }
         validateAllocatedMinutes(confirmedTasks);
 
-        Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
-        int dailyCapacityMinutes = calculateDailyCapacityMinutes(goal);
+        Set<DayOfWeek> availableDays = resolveAvailableDays(memberId, goal);
+        int dailyCapacityMinutes = calculateDailyCapacityMinutes(memberId, goal, availableDays);
         LocalDate earliestStart = earliestStart(goal);
 
         List<ScheduleAllocator.AllocatedItem> allocations = scheduleAiService.generateSchedule(
@@ -151,7 +151,8 @@ public class ScheduleService {
     public void deleteSchedule(Long memberId, Long scheduleId) {
         Schedule schedule = getOwnedSchedule(memberId, scheduleId);
         List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
-        List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId).toList();
+        List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
         if (!taskIds.isEmpty()) {
             List<LearningTask> tasks = learningTaskRepository.findAllById(taskIds);
             for (LearningTask task : tasks) {
@@ -196,7 +197,7 @@ public class ScheduleService {
         if (newDate.isBefore(LocalDate.now())) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_IN_PAST);
         }
-        Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
+        Set<DayOfWeek> availableDays = resolveAvailableDays(memberId, goal);
         if (!availableDays.contains(newDate.getDayOfWeek())) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_NOT_AVAILABLE);
         }
@@ -206,7 +207,7 @@ public class ScheduleService {
                 .filter(item -> !item.getId().equals(itemId) && item.getDate().equals(newDate))
                 .toList();
         int existingMinutesOnNewDate = othersOnNewDate.stream().mapToInt(ScheduleItem::getAllocatedMinutes).sum();
-        int dailyCapacityMinutes = calculateDailyCapacityMinutes(goal);
+        int dailyCapacityMinutes = calculateDailyCapacityMinutes(memberId, goal, resolveAvailableDays(memberId, goal));
         // 그 날짜의 유일한 항목이 되는 경우는 하루 한도를 넘어도 허용한다 (ScheduleAllocator와 동일한 예외 규칙).
         if (!othersOnNewDate.isEmpty() && existingMinutesOnNewDate + newMinutes > dailyCapacityMinutes) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_CAPACITY_EXCEEDED);
@@ -334,9 +335,10 @@ public class ScheduleService {
         List<ScheduleItem> replaceable = all.stream().filter(item -> item.getStatus() != ScheduleItemStatus.FINISHED).toList();
         scheduleItemRepository.deleteAll(replaceable);
         scheduleItemRepository.flush();
-        int capacity = calculateDailyCapacityMinutes(goal);
+        Set<DayOfWeek> availableDays = resolveAvailableDays(memberId, goal);
+        int capacity = calculateDailyCapacityMinutes(memberId, goal, availableDays);
         ScheduleAllocator.AllocationPlan plan = new ScheduleAllocator().allocateWithSupplementDays(remaining, earliestStart(goal),
-                parseAvailableDays(goal.getAvailableDays()), capacity, supplementEveryRegularDays(capacity), MAX_HORIZON_DAYS);
+                availableDays, capacity, supplementEveryRegularDays(capacity), MAX_HORIZON_DAYS);
         List<ScheduleAllocator.AllocatedItem> allocations = plan.regularItems();
         List<ScheduleItem> replanned = createItemsWithSupplementDays(schedule, plan, capacity);
         scheduleItemRepository.saveAll(replanned);
@@ -397,7 +399,7 @@ public class ScheduleService {
             for (ScheduleItem item : items.stream().filter(candidate -> candidate.getDate().equals(date))
                     .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList()) {
                 int minutes = item.getAllocatedMinutes();
-                while (windowIndex < windows.size() && cursor.plusMinutes(minutes).isAfter(windows.get(windowIndex).getEndTime())) {
+                while (windowIndex < windows.size() && !fitsInWindow(cursor, minutes, windows.get(windowIndex).getEndTime())) {
                     windowIndex++; if (windowIndex < windows.size()) cursor = windows.get(windowIndex).getStartTime();
                 }
                 if (windowIndex >= windows.size()) throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
@@ -414,6 +416,12 @@ public class ScheduleService {
                     allocation.date(), allocation.date().getDayOfWeek(), allocation.allocatedMinutes(), allocation.orderInDay()));
         }
         return items;
+    }
+
+    private boolean fitsInWindow(LocalTime start, int minutes, LocalTime end) {
+        int startMinute = start.getHour() * 60 + start.getMinute();
+        int endExclusiveMinute = end.equals(LocalTime.of(23, 59)) ? 1440 : end.getHour() * 60 + end.getMinute();
+        return startMinute + minutes <= endExclusiveMinute;
     }
 
     private ScheduleItem getOwnedScheduleItemForUpdate(Long scheduleId, Long itemId) {
@@ -507,10 +515,37 @@ public class ScheduleService {
         };
     }
 
-    private int calculateDailyCapacityMinutes(MemberGoal goal) {
+    /**
+     * Time windows are the source of truth for the new planner. The allocator has
+     * one daily capacity, therefore it uses the smallest enabled weekday capacity
+     * to guarantee that no selected weekday is overbooked. Legacy goals without
+     * windows retain their dailyStudyHours behavior.
+     */
+    private int calculateDailyCapacityMinutes(Long memberId, MemberGoal goal, Set<DayOfWeek> availableDays) {
+        if (availabilityRepository != null) {
+            java.util.Map<DayOfWeek, Integer> minutesByDay = availabilityRepository
+                    .findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(memberId).stream()
+                    .filter(Availability::isEnabled)
+                    .collect(Collectors.groupingBy(Availability::getDayOfWeek,
+                            Collectors.summingInt(Availability::getAvailableMinutes)));
+            int windowCapacity = availableDays.stream().map(minutesByDay::get)
+                    .filter(java.util.Objects::nonNull).min(Integer::compareTo).orElse(0);
+            if (windowCapacity > 0) return windowCapacity;
+        }
         if (goal.getDailyStudyHours() == null || goal.getDailyStudyHours() <= 0) {
             throw new CustomException(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
         }
         return goal.getDailyStudyHours() * 60;
+    }
+
+    private Set<DayOfWeek> resolveAvailableDays(Long memberId, MemberGoal goal) {
+        if (availabilityRepository != null) {
+            Set<DayOfWeek> daysWithWindows = availabilityRepository
+                    .findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(memberId).stream()
+                    .filter(Availability::isEnabled).map(Availability::getDayOfWeek)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            if (!daysWithWindows.isEmpty()) return daysWithWindows;
+        }
+        return parseAvailableDays(goal.getAvailableDays());
     }
 }

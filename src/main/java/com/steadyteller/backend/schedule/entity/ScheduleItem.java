@@ -39,7 +39,9 @@ public class ScheduleItem extends BaseTimeEntity {
     @JoinColumn(name = "schedule_id", nullable = false)
     private Schedule schedule;
 
-    @Column
+    // BREAK/SUPPLEMENT/빈 일정 슬롯은 실제 학습 태스크를 참조하지 않는다.
+    // 기존 데이터베이스의 NOT NULL 제약은 시작 시 마이그레이션으로 완화한다.
+    @Column(nullable = true)
     private Long learningTaskId;
 
     @Column(nullable = false)

@@ -17,8 +17,13 @@ import com.steadyteller.backend.learningtask.repository.LearningTaskCandidateRep
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
+import com.steadyteller.backend.member.domain.Availability;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.util.Map;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 해당 MemberGoal 로우에 비관적 락을 먼저 잡고 트랜잭션이 끝날 때까지 유지해, goalId 단위로 서로 직렬화되게 한다.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class LearningTaskService {
 
@@ -65,6 +71,72 @@ public class LearningTaskService {
 
         List<LearningTaskCandidate> saved = candidateRepository.saveAll(newCandidates);
         return saved.stream().map(LearningTaskCandidateResponseDto::from).toList();
+    }
+
+    /** Generates candidates with the actual weekly windows and rejects plans that cannot fit by the deadline. */
+    @Transactional
+    public List<LearningTaskCandidateResponseDto> generateTasksForAvailability(
+            Long memberId, Long goalId, List<Availability> availabilities
+    ) {
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
+        int totalMinutes = totalAvailabilityMinutes(goal, availabilities);
+        int largestWindowMinutes = availabilities.stream().filter(Availability::isEnabled)
+                .mapToInt(Availability::getAvailableMinutes).max().orElse(0);
+        if (totalMinutes <= 0 || largestWindowMinutes <= 0) {
+            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
+        }
+        String constraint = "Total until deadline: %d minutes; maximum single task: %d minutes; windows: %s"
+                .formatted(totalMinutes, largestWindowMinutes, summarizeAvailability(availabilities));
+        List<AiGeneratedTaskDto> aiResults;
+        try {
+            aiResults = learningTaskAiService.generateTasks(goal, constraint);
+        } catch (CustomException exception) {
+            if (exception.getErrorCode() != LearningTaskErrorCode.AI_GENERATION_FAILED) throw exception;
+            log.warn("AI task generation failed; using availability-safe fallback tasks. goalId={}", goalId);
+            aiResults = fallbackTasks(goal, totalMinutes, largestWindowMinutes);
+        }
+        int generatedMinutes = aiResults.stream().mapToInt(AiGeneratedTaskDto::allocatedMinutes).sum();
+        if (generatedMinutes > totalMinutes || aiResults.stream()
+                .anyMatch(task -> task.allocatedMinutes() > largestWindowMinutes)) {
+            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
+        }
+        candidateRepository.deleteByGoalId(goalId);
+        List<LearningTaskCandidate> candidates = aiResults.stream().map(result -> LearningTaskCandidate.builder()
+                .goalId(goalId).memberId(memberId).title(result.title()).category(result.category())
+                .subject(result.subject()).difficulty(result.difficulty()).allocatedMinutes(result.allocatedMinutes())
+                .source(LearningTaskSource.AI_GENERATED).modified(false).build()).toList();
+        return candidateRepository.saveAll(candidates).stream().map(LearningTaskCandidateResponseDto::from).toList();
+    }
+
+    private int totalAvailabilityMinutes(MemberGoal goal, List<Availability> availabilities) {
+        Map<DayOfWeek, Integer> minutesByDay = availabilities.stream().filter(Availability::isEnabled)
+                .collect(java.util.stream.Collectors.groupingBy(Availability::getDayOfWeek,
+                        java.util.stream.Collectors.summingInt(Availability::getAvailableMinutes)));
+        LocalDate cursor = goal.getStartDate().isAfter(LocalDate.now()) ? goal.getStartDate() : LocalDate.now();
+        int total = 0;
+        while (!cursor.isAfter(goal.getTargetDate())) {
+            total += minutesByDay.getOrDefault(cursor.getDayOfWeek(), 0);
+            cursor = cursor.plusDays(1);
+        }
+        return total;
+    }
+
+    private String summarizeAvailability(List<Availability> availabilities) {
+        return availabilities.stream().filter(Availability::isEnabled)
+                .map(item -> item.getDayOfWeek() + " " + item.getStartTime() + "-" + item.getEndTime())
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    /** Keeps the user moving when the external AI provider is unavailable. */
+    private List<AiGeneratedTaskDto> fallbackTasks(MemberGoal goal, int totalMinutes, int largestWindowMinutes) {
+        int taskMinutes = Math.min(Math.min(60, largestWindowMinutes), totalMinutes);
+        int count = Math.max(1, Math.min(4, totalMinutes / taskMinutes));
+        List<String> steps = List.of("핵심 개념 정리", "기본 예제 학습", "실습 및 적용", "복습과 체크");
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(index -> new AiGeneratedTaskDto(
+                        goal.getTitle() + " · " + steps.get(index),
+                        goal.getFocusArea(), goal.getTitle(), Math.min(3 + index / 2, 5), taskMinutes))
+                .toList();
     }
 
     @Transactional(readOnly = true)

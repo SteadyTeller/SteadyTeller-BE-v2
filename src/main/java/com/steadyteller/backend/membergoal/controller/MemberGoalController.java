@@ -3,6 +3,9 @@ package com.steadyteller.backend.membergoal.controller;
 import com.steadyteller.backend.global.common.ApiResponse;
 import com.steadyteller.backend.membergoal.dto.MemberGoalResponseDto;
 import com.steadyteller.backend.membergoal.dto.MemberStudyInfoRequestDto;
+import com.steadyteller.backend.membergoal.dto.GoalPlanGenerationRequestDto;
+import com.steadyteller.backend.membergoal.dto.GoalPlanGenerationResponseDto;
+import com.steadyteller.backend.membergoal.service.GoalPlanGenerationService;
 import com.steadyteller.backend.membergoal.service.MemberGoalService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -25,6 +28,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class MemberGoalController {
 
     private final MemberGoalService memberGoalService;
+    private final GoalPlanGenerationService goalPlanGenerationService;
+
+    @PostMapping("/plan")
+    public ResponseEntity<ApiResponse<GoalPlanGenerationResponseDto>> generatePlan(
+            @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody GoalPlanGenerationRequestDto request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Goal, availability, tasks, and schedule were generated.",
+                        goalPlanGenerationService.generate(memberId, request)));
+    }
 
     // 학습 목표 설정: 새 MemberGoal 생성
     @PostMapping

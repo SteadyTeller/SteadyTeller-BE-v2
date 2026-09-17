@@ -27,11 +27,15 @@ public class LearningTaskAiService {
     private final ChatClient chatClient;
 
     public List<AiGeneratedTaskDto> generateTasks(MemberGoal goal) {
+        return generateTasks(goal, "No calendar-window constraint was provided.");
+    }
+
+    public List<AiGeneratedTaskDto> generateTasks(MemberGoal goal, String availabilityConstraint) {
         List<AiGeneratedTaskDto> tasks;
         log.info("AI task generation started: goalId={}, title={}", goal.getId(), goal.getTitle());
         try {
             tasks = chatClient.prompt()
-                    .user(buildPrompt(goal))
+                    .user(buildPrompt(goal, availabilityConstraint))
                     .call()
                     .entity(new ParameterizedTypeReference<List<AiGeneratedTaskDto>>() {
                     });
@@ -60,7 +64,7 @@ public class LearningTaskAiService {
         return Objects.isNull(value) || value.isBlank();
     }
 
-    private String buildPrompt(MemberGoal goal) {
+    private String buildPrompt(MemberGoal goal, String availabilityConstraint) {
         return """
                 당신은 학습 코치입니다. 아래 학습 목표를 바탕으로 사용자가 바로 수행할 수 있는
                 세부 학습 태스크 목록을 생성하세요.
@@ -90,6 +94,7 @@ public class LearningTaskAiService {
                 goal.getDailyStudyHours(),
                 goal.getAvailableDays(),
                 goal.getFocusArea()
-        );
+        ) + "\n[Actual availability constraint]\n" + availabilityConstraint
+          + "\nKeep every task within one contiguous window and keep the total allocated minutes within the stated total.";
     }
 }
