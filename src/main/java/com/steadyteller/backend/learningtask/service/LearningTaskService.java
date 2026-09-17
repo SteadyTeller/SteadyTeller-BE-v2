@@ -15,6 +15,8 @@ import com.steadyteller.backend.learningtask.entity.LearningTaskStatus;
 import com.steadyteller.backend.learningtask.exception.LearningTaskErrorCode;
 import com.steadyteller.backend.learningtask.repository.LearningTaskCandidateRepository;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
+import com.steadyteller.backend.schedule.entity.ScheduleItem;
+import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ public class LearningTaskService {
     private final LearningTaskRepository learningTaskRepository;
     private final LearningTaskCandidateRepository candidateRepository;
     private final LearningTaskAiService learningTaskAiService;
+    private final ScheduleItemRepository scheduleItemRepository;
 
     /**
      * AI 세부 태스크 생성 (설계 명세 2번). 기존에 남아있던 해당 goal의 후보는 새 결과로 교체된다.
@@ -117,6 +120,17 @@ public class LearningTaskService {
     public void deleteCandidate(Long memberId, Long candidateId) {
         LearningTaskCandidate candidate = getOwnedCandidate(memberId, candidateId);
         candidateRepository.delete(candidate);
+    }
+
+    /** Deletes a confirmed task but preserves its booked calendar slots as empty reservations. */
+    @Transactional
+    public void deleteConfirmedTask(Long memberId, Long taskId) {
+        LearningTask task = learningTaskRepository.findById(taskId)
+                .orElseThrow(() -> new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND));
+        getOwnedGoalForUpdate(memberId, task.getGoalId());
+        List<ScheduleItem> scheduledItems = scheduleItemRepository.findByLearningTaskIdForUpdate(taskId);
+        scheduledItems.forEach(ScheduleItem::clearTask);
+        learningTaskRepository.delete(task);
     }
 
     /**

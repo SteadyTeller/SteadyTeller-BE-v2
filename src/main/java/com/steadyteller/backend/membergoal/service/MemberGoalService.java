@@ -37,6 +37,7 @@ public class MemberGoalService {
                 .targetDate(request.targetDate())
                 .currentLevel(request.currentLevel())
                 .dailyStudyHours(request.dailyStudyHours())
+                .breakMinutes(request.breakMinutes())
                 .availableDays(request.availableDays())
                 .focusArea(request.focusArea())
                 .build();
@@ -64,6 +65,7 @@ public class MemberGoalService {
                 request.targetDate(),
                 request.currentLevel(),
                 request.dailyStudyHours(),
+                request.breakMinutes(),
                 request.availableDays(),
                 request.focusArea()
         );

@@ -49,6 +49,61 @@ public class ScheduleAllocator {
     public record AllocatedItem(LearningTask task, LocalDate date, int allocatedMinutes, int orderInDay) {
     }
 
+    /** Regular task placements plus whole available days intentionally reserved for catch-up. */
+    public record AllocationPlan(List<AllocatedItem> regularItems, List<LocalDate> supplementDates) {
+    }
+
+    public AllocationPlan allocateWithSupplementDays(
+            List<LearningTask> orderedTasks, LocalDate earliestStart, Set<DayOfWeek> availableDays,
+            int dailyCapacityMinutes, int supplementEveryRegularDays, int maxHorizonDays
+    ) {
+        List<AllocatedItem> result = new ArrayList<>();
+        List<LocalDate> supplementDates = new ArrayList<>();
+        Iterator<LearningTask> iterator = orderedTasks.iterator();
+        LearningTask pending = iterator.hasNext() ? iterator.next() : null;
+        LocalDate cursor = earliestStart;
+        int daysWalked = 0;
+        int regularDaysSinceSupplement = 0;
+
+        while (pending != null) {
+            if (daysWalked > maxHorizonDays) {
+                throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
+            }
+            if (!availableDays.contains(cursor.getDayOfWeek())) {
+                cursor = cursor.plusDays(1); daysWalked++; continue;
+            }
+            if (regularDaysSinceSupplement == supplementEveryRegularDays) {
+                supplementDates.add(cursor);
+                regularDaysSinceSupplement = 0;
+                cursor = cursor.plusDays(1); daysWalked++; continue;
+            }
+
+            int remainingMinutes = dailyCapacityMinutes;
+            int orderInDay = 1;
+            boolean placedAnyToday = false;
+            while (pending != null) {
+                int minutes = pending.getAllocatedMinutes();
+                if (!placedAnyToday || minutes <= remainingMinutes) {
+                    result.add(new AllocatedItem(pending, cursor, minutes, orderInDay++));
+                    remainingMinutes -= minutes;
+                    placedAnyToday = true;
+                    pending = iterator.hasNext() ? iterator.next() : null;
+                } else break;
+            }
+            regularDaysSinceSupplement++;
+            cursor = cursor.plusDays(1); daysWalked++;
+        }
+        // The final whole-day slot protects the last regular day too, rather than leaving it without recovery time.
+        while (regularDaysSinceSupplement > 0 && daysWalked <= maxHorizonDays) {
+            if (availableDays.contains(cursor.getDayOfWeek())) {
+                supplementDates.add(cursor);
+                break;
+            }
+            cursor = cursor.plusDays(1); daysWalked++;
+        }
+        return new AllocationPlan(result, supplementDates);
+    }
+
     public List<AllocatedItem> allocate(
             List<LearningTask> orderedTasks,
             LocalDate earliestStart,

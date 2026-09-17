@@ -5,20 +5,29 @@ import com.steadyteller.backend.learningtask.entity.LearningTask;
 import com.steadyteller.backend.learningtask.entity.LearningTaskStatus;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
+import com.steadyteller.backend.member.domain.Availability;
+import com.steadyteller.backend.member.repository.AvailabilityRepository;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.schedule.dto.ScheduleItemResponseDto;
+import com.steadyteller.backend.schedule.dto.ScheduleItemFailureRequestDto;
+import com.steadyteller.backend.schedule.dto.ScheduleFailureResultDto;
 import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
+import com.steadyteller.backend.schedule.entity.ScheduleItemKind;
+import com.steadyteller.backend.schedule.entity.ScheduleFailure;
+import com.steadyteller.backend.schedule.entity.FailureHandlingAction;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
+import com.steadyteller.backend.schedule.repository.ScheduleFailureRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -28,6 +37,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -38,7 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Transactional(readOnly = true)
 public class ScheduleService {
 
@@ -50,7 +60,23 @@ public class ScheduleService {
     private final LearningTaskRepository learningTaskRepository;
     private final ScheduleRepository scheduleRepository;
     private final ScheduleItemRepository scheduleItemRepository;
+    private final ScheduleFailureRepository scheduleFailureRepository;
     private final ScheduleAiService scheduleAiService;
+
+    @Autowired(required = false)
+    private AvailabilityRepository availabilityRepository;
+
+    /** Kept for source compatibility with callers built before failure history was introduced. */
+    public ScheduleService(MemberGoalRepository memberGoalRepository, LearningTaskRepository learningTaskRepository,
+                           ScheduleRepository scheduleRepository, ScheduleItemRepository scheduleItemRepository,
+                           ScheduleAiService scheduleAiService) {
+        this.memberGoalRepository = memberGoalRepository;
+        this.learningTaskRepository = learningTaskRepository;
+        this.scheduleRepository = scheduleRepository;
+        this.scheduleItemRepository = scheduleItemRepository;
+        this.scheduleFailureRepository = null;
+        this.scheduleAiService = scheduleAiService;
+    }
 
     @Transactional
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
@@ -74,25 +100,28 @@ public class ScheduleService {
         log.info("Schedule allocation completed: goalId={}, taskCount={}, allocationCount={}, dailyCapacityMinutes={}",
                 goalId, confirmedTasks.size(), allocations.size(), dailyCapacityMinutes);
 
+        ScheduleAllocator.AllocationPlan plan = scheduleFailureRepository == null ? null
+                : new ScheduleAllocator().allocateWithSupplementDays(allocations.stream()
+                        .map(ScheduleAllocator.AllocatedItem::task).toList(), earliestStart, availableDays,
+                        dailyCapacityMinutes, supplementEveryRegularDays(dailyCapacityMinutes), MAX_HORIZON_DAYS);
+        List<ScheduleAllocator.AllocatedItem> plannedAllocations = plan == null ? allocations : plan.regularItems();
         Schedule schedule = scheduleRepository.save(Schedule.create(
                 memberId,
                 goalId,
-                allocations.get(0).date(),
-                allocations.get(allocations.size() - 1).date()
+                plannedAllocations.getFirst().date(),
+                plannedAllocations.getLast().date()
         ));
 
-        List<ScheduleItem> items = allocations.stream()
-                .map(allocation -> ScheduleItem.create(
-                        schedule,
-                        allocation.task().getId(),
-                        allocation.task().getTitle(),
-                        allocation.date(),
-                        allocation.date().getDayOfWeek(),
-                        allocation.allocatedMinutes(),
-                        allocation.orderInDay()
-                ))
-                .toList();
+        // The compatibility constructor is retained for pre-failure-history callers/tests only.
+        List<ScheduleItem> items = scheduleFailureRepository == null
+                ? createRegularItems(schedule, allocations)
+                : createItemsWithSupplementDays(schedule, plan, dailyCapacityMinutes);
+        if (scheduleFailureRepository != null) {
+            insertBreaksAndAssignTimeRanges(memberId, items, goal.getBreakMinutes());
+        }
         scheduleItemRepository.saveAll(items);
+        schedule.updatePeriod(schedule.getStartDate(), items.stream().map(ScheduleItem::getDate)
+                .max(LocalDate::compareTo).orElse(schedule.getEndDate()));
 
         for (LearningTask task : confirmedTasks) {
             task.markAsScheduled();
@@ -230,6 +259,161 @@ public class ScheduleService {
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.revertCompletion();
         return ScheduleItemResponseDto.from(item);
+    }
+
+    @Transactional
+    public ScheduleFailureResultDto failScheduleItem(Long memberId, Long scheduleId, Long itemId,
+                                                      ScheduleItemFailureRequestDto request) {
+        getOwnedSchedule(memberId, scheduleId);
+        ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
+        if (item.getLearningTaskId() == null || item.getStatus() == ScheduleItemStatus.FINISHED) {
+            throw new IllegalArgumentException("Completed items and empty supplement slots cannot fail.");
+        }
+        item.fail();
+        scheduleFailureRepository.save(ScheduleFailure.create(itemId, item.getLearningTaskId(), request.reasonCode(),
+                request.reasonDetail(), request.action()));
+        int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
+        boolean splitRecommended = failures >= 3;
+        if (request.action() == FailureHandlingAction.REPLAN_REMAINING) {
+            replanRemainingInternal(memberId, scheduleId);
+            return new ScheduleFailureResultDto(failures, false, false, splitRecommended, true,
+                    splitRecommended ? "동일 태스크가 3회 이상 실패했습니다. 재배치 후 태스크 분할을 권유합니다."
+                            : "완료하지 않은 태스크만 유지하여 남은 일정을 재조정했습니다.");
+        }
+        ScheduleItem supplement = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
+                .stream().filter(candidate -> candidate.getKind() == ScheduleItemKind.SUPPLEMENT
+                        && candidate.getLearningTaskId() == null && candidate.getStatus() == ScheduleItemStatus.PENDING
+                        && !candidate.getDate().isBefore(LocalDate.now())
+                        && candidate.getAllocatedMinutes() >= item.getAllocatedMinutes()).findFirst().orElse(null);
+        if (supplement == null) {
+            return new ScheduleFailureResultDto(failures, false, true, splitRecommended, true,
+                    splitRecommended ? "보충 시간이 부족하고 3회 이상 실패했습니다. 태스크 분할 또는 남은 일정 재조정을 권유합니다."
+                            : "보충 시간이 부족합니다. 남은 일정 전체 재조정 또는 목표일 연장을 권유합니다.");
+        }
+        supplement.assignToSupplement(item.getLearningTaskId(), item.getTitle());
+        return new ScheduleFailureResultDto(failures, true, false, splitRecommended, false,
+                splitRecommended ? "보충 시간에 배치했습니다. 동일 태스크가 3회 이상 실패하여 분할도 권유합니다."
+                        : "보충 시간에 실패한 태스크를 배치했습니다.");
+    }
+
+    /** User-initiated postponement: normal calendar dates are never accepted as a destination. */
+    @Transactional
+    public ScheduleItemResponseDto deferToSupplement(Long memberId, Long scheduleId, Long itemId) {
+        getOwnedSchedule(memberId, scheduleId);
+        ScheduleItem source = getOwnedScheduleItemForUpdate(scheduleId, itemId);
+        if (source.getLearningTaskId() == null || source.getStatus() == ScheduleItemStatus.FINISHED) {
+            throw new IllegalArgumentException("Only an unfinished task can be deferred.");
+        }
+        ScheduleItem destination = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
+                .stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT
+                        && item.getLearningTaskId() == null && !item.getDate().isBefore(LocalDate.now())
+                        && item.getAllocatedMinutes() >= source.getAllocatedMinutes()).findFirst()
+                .orElseThrow(() -> new IllegalStateException("No supplement day has enough remaining time."));
+        destination.assignToSupplement(source.getLearningTaskId(), source.getTitle());
+        source.clearTask();
+        return ScheduleItemResponseDto.from(destination);
+    }
+
+    @Transactional
+    public ScheduleResponseDto replanRemaining(Long memberId, Long scheduleId) {
+        return replanRemainingInternal(memberId, scheduleId);
+    }
+
+    /** Keeps FINISHED items and recreates only failed/pending/in-progress task placements. */
+    private ScheduleResponseDto replanRemainingInternal(Long memberId, Long scheduleId) {
+        Schedule schedule = getOwnedSchedule(memberId, scheduleId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, schedule.getGoalId());
+        List<ScheduleItem> all = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
+        List<Long> taskIds = all.stream().filter(item -> item.getStatus() != ScheduleItemStatus.FINISHED
+                        && item.getLearningTaskId() != null).map(ScheduleItem::getLearningTaskId).distinct().toList();
+        if (taskIds.isEmpty()) return ScheduleResponseDto.of(schedule, all);
+        java.util.Map<Long, LearningTask> byId = learningTaskRepository.findAllById(taskIds).stream()
+                .collect(Collectors.toMap(LearningTask::getId, task -> task));
+        List<LearningTask> remaining = taskIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+        validateAllocatedMinutes(remaining);
+        List<ScheduleItem> replaceable = all.stream().filter(item -> item.getStatus() != ScheduleItemStatus.FINISHED).toList();
+        scheduleItemRepository.deleteAll(replaceable);
+        scheduleItemRepository.flush();
+        int capacity = calculateDailyCapacityMinutes(goal);
+        ScheduleAllocator.AllocationPlan plan = new ScheduleAllocator().allocateWithSupplementDays(remaining, earliestStart(goal),
+                parseAvailableDays(goal.getAvailableDays()), capacity, supplementEveryRegularDays(capacity), MAX_HORIZON_DAYS);
+        List<ScheduleAllocator.AllocatedItem> allocations = plan.regularItems();
+        List<ScheduleItem> replanned = createItemsWithSupplementDays(schedule, plan, capacity);
+        scheduleItemRepository.saveAll(replanned);
+        LocalDate start = all.stream().filter(item -> item.getStatus() == ScheduleItemStatus.FINISHED)
+                .map(ScheduleItem::getDate).min(LocalDate::compareTo).orElse(allocations.getFirst().date());
+        LocalDate end = replanned.stream().map(ScheduleItem::getDate).max(LocalDate::compareTo).orElse(start);
+        schedule.updatePeriod(start, end);
+        List<ScheduleItem> response = new ArrayList<>(all.stream()
+                .filter(item -> item.getStatus() == ScheduleItemStatus.FINISHED).toList());
+        response.addAll(replanned);
+        response.sort(Comparator.comparing(ScheduleItem::getDate).thenComparingInt(ScheduleItem::getOrderIndex));
+        return ScheduleResponseDto.of(schedule, response);
+    }
+
+    private List<ScheduleItem> createItemsWithSupplementDays(Schedule schedule,
+            ScheduleAllocator.AllocationPlan plan, int dailyCapacityMinutes) {
+        List<ScheduleItem> items = createRegularItems(schedule, plan.regularItems());
+        for (LocalDate date : plan.supplementDates()) {
+            items.add(ScheduleItem.createSupplement(schedule, date, date.getDayOfWeek(), dailyCapacityMinutes, 1));
+        }
+        items.sort(Comparator.comparing(ScheduleItem::getDate).thenComparingInt(ScheduleItem::getOrderIndex));
+        return items;
+    }
+
+    private int supplementEveryRegularDays(int dailyCapacityMinutes) {
+        if (dailyCapacityMinutes <= 60) return 4;
+        if (dailyCapacityMinutes <= 120) return 3;
+        return 2;
+    }
+
+    private void insertBreaksAndAssignTimeRanges(Long memberId, List<ScheduleItem> items, int breakMinutes) {
+        java.util.Map<LocalDate, List<ScheduleItem>> byDate = items.stream().collect(
+                Collectors.groupingBy(ScheduleItem::getDate, java.util.TreeMap::new, Collectors.toList()));
+        List<ScheduleItem> result = new ArrayList<>();
+        for (List<ScheduleItem> dayItems : byDate.values()) {
+            List<ScheduleItem> regulars = dayItems.stream().filter(item -> item.getKind() == ScheduleItemKind.REGULAR)
+                    .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList();
+            List<ScheduleItem> supplements = dayItems.stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT).toList();
+            int order = 1;
+            for (int i = 0; i < regulars.size(); i++) {
+                ScheduleItem item = regulars.get(i); item.updateOrderIndex(order++); result.add(item);
+                if (breakMinutes > 0 && i < regulars.size() - 1) {
+                    result.add(ScheduleItem.createBreak(item.getSchedule(), item.getDate(), item.getDayOfWeek(), breakMinutes, order++));
+                }
+            }
+            for (ScheduleItem supplement : supplements) { supplement.updateOrderIndex(order++); result.add(supplement); }
+        }
+        items.clear(); items.addAll(result);
+        if (availabilityRepository == null) return;
+        java.util.Map<java.time.DayOfWeek, List<Availability>> availabilityByDay = availabilityRepository
+                .findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(memberId).stream().filter(Availability::isEnabled)
+                .collect(Collectors.groupingBy(Availability::getDayOfWeek));
+        for (List<ScheduleItem> dayItems : byDate.values()) {
+            LocalDate date = dayItems.getFirst().getDate();
+            List<Availability> windows = availabilityByDay.getOrDefault(date.getDayOfWeek(), List.of());
+            if (windows.isEmpty()) continue;
+            int windowIndex = 0; LocalTime cursor = windows.getFirst().getStartTime();
+            for (ScheduleItem item : items.stream().filter(candidate -> candidate.getDate().equals(date))
+                    .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList()) {
+                int minutes = item.getAllocatedMinutes();
+                while (windowIndex < windows.size() && cursor.plusMinutes(minutes).isAfter(windows.get(windowIndex).getEndTime())) {
+                    windowIndex++; if (windowIndex < windows.size()) cursor = windows.get(windowIndex).getStartTime();
+                }
+                if (windowIndex >= windows.size()) throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
+                item.assignTimeRange(cursor, cursor.plusMinutes(minutes));
+                cursor = cursor.plusMinutes(minutes);
+            }
+        }
+    }
+
+    private List<ScheduleItem> createRegularItems(Schedule schedule, List<ScheduleAllocator.AllocatedItem> allocations) {
+        List<ScheduleItem> items = new ArrayList<>();
+        for (ScheduleAllocator.AllocatedItem allocation : allocations) {
+            items.add(ScheduleItem.create(schedule, allocation.task().getId(), allocation.task().getTitle(),
+                    allocation.date(), allocation.date().getDayOfWeek(), allocation.allocatedMinutes(), allocation.orderInDay()));
+        }
+        return items;
     }
 
     private ScheduleItem getOwnedScheduleItemForUpdate(Long scheduleId, Long itemId) {

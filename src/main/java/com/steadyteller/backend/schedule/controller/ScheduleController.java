@@ -2,6 +2,8 @@ package com.steadyteller.backend.schedule.controller;
 
 import com.steadyteller.backend.global.common.ApiResponse;
 import com.steadyteller.backend.schedule.dto.ScheduleItemResponseDto;
+import com.steadyteller.backend.schedule.dto.ScheduleItemFailureRequestDto;
+import com.steadyteller.backend.schedule.dto.ScheduleFailureResultDto;
 import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
@@ -102,6 +104,31 @@ public class ScheduleController {
                 "스케줄 항목을 완료 처리했습니다.",
                 scheduleService.completeScheduleItem(memberId, scheduleId, itemId)
         ));
+    }
+
+    @PatchMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/failure")
+    public ResponseEntity<ApiResponse<ScheduleFailureResultDto>> failScheduleItem(
+            @AuthenticationPrincipal Long memberId, @PathVariable Long scheduleId, @PathVariable Long itemId,
+            @Valid @RequestBody ScheduleItemFailureRequestDto request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("실패 기록과 후속 처리 제안이 저장되었습니다.",
+                scheduleService.failScheduleItem(memberId, scheduleId, itemId, request)));
+    }
+
+    @PatchMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/defer-to-supplement")
+    public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> deferToSupplement(
+            @AuthenticationPrincipal Long memberId, @PathVariable Long scheduleId, @PathVariable Long itemId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("가장 빠른 보충일로 일정을 미뤘습니다.",
+                scheduleService.deferToSupplement(memberId, scheduleId, itemId)));
+    }
+
+    @PostMapping("/api/v1/schedules/{scheduleId}/replan-remaining")
+    public ResponseEntity<ApiResponse<ScheduleResponseDto>> replanRemaining(
+            @AuthenticationPrincipal Long memberId, @PathVariable Long scheduleId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("완료한 태스크를 제외하고 남은 일정을 재조정했습니다.",
+                scheduleService.replanRemaining(memberId, scheduleId)));
     }
 
     @DeleteMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/complete")

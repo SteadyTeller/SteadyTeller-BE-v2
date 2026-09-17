@@ -51,6 +51,9 @@ public class MemberGoal extends BaseTimeEntity {
     @Column(nullable = false)
     private Integer dailyStudyHours;
 
+    @Column(nullable = false)
+    private Integer breakMinutes = 0;
+
     @ElementCollection
     @CollectionTable(name = "member_goal_available_days", joinColumns = @JoinColumn(name = "member_goal_id"))
     @Column(name = "day_of_week", nullable = false)
@@ -61,29 +64,37 @@ public class MemberGoal extends BaseTimeEntity {
 
     @Builder
     public MemberGoal(Long memberId, String title, LocalDate startDate, LocalDate targetDate,
-                       String currentLevel, Integer dailyStudyHours, List<String> availableDays, String focusArea) {
+                       String currentLevel, Integer dailyStudyHours, Integer breakMinutes, List<String> availableDays, String focusArea) {
         this.memberId = memberId;
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
         this.currentLevel = currentLevel;
         this.dailyStudyHours = dailyStudyHours;
+        this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
         this.availableDays = availableDays;
         this.focusArea = focusArea;
     }
 
     public void update(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
-                        Integer dailyStudyHours, List<String> availableDays, String focusArea) {
+                        Integer dailyStudyHours, Integer breakMinutes, List<String> availableDays, String focusArea) {
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
         this.currentLevel = currentLevel;
         this.dailyStudyHours = dailyStudyHours;
+        this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
         this.availableDays = availableDays;
         this.focusArea = focusArea;
     }
 
     public boolean isOwnedBy(Long memberId) {
         return this.memberId.equals(memberId);
+    }
+
+    public void extendTargetDate(LocalDate targetDate) {
+        if (targetDate.isAfter(this.targetDate)) {
+            this.targetDate = targetDate;
+        }
     }
 }

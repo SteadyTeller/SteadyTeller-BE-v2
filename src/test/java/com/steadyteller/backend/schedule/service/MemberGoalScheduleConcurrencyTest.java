@@ -231,7 +231,10 @@ class MemberGoalScheduleConcurrencyTest {
         if (!schedules.isEmpty()) {
             List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAsc(schedules.get(0).getId());
             for (ScheduleItem item : items) {
-                assertThat(learningTaskRepository.findById(item.getLearningTaskId())).isPresent();
+                // 보충 시간은 의도적으로 LearningTask 없이 생성되는 예약 슬롯이다.
+                if (item.getLearningTaskId() != null) {
+                    assertThat(learningTaskRepository.findById(item.getLearningTaskId())).isPresent();
+                }
             }
         }
     }

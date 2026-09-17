@@ -85,6 +85,13 @@ public class LearningTaskController {
         return ResponseEntity.ok(ApiResponse.success("후보 태스크가 삭제되었습니다.", null));
     }
 
+    @DeleteMapping("/confirmed-tasks/{taskId}")
+    public ResponseEntity<ApiResponse<Void>> deleteConfirmedTask(
+            @AuthenticationPrincipal Long memberId, @PathVariable Long taskId) {
+        learningTaskService.deleteConfirmedTask(memberId, taskId);
+        return ResponseEntity.ok(ApiResponse.success("확정 태스크를 삭제하고 기존 일정은 빈 일정으로 유지했습니다.", null));
+    }
+
     // 최종 승인: 현재 후보 목록을 LearningTask로 일괄 저장 (status=PENDING) 후 후보 캐시 비움
     @PostMapping("/goals/{goalId}/tasks/confirm")
     public ResponseEntity<ApiResponse<List<LearningTaskResponseDto>>> confirmTasks(

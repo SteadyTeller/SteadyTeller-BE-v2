@@ -26,4 +26,8 @@ public interface ScheduleItemRepository extends JpaRepository<ScheduleItem, Long
     List<ScheduleItem> findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(@Param("scheduleId") Long scheduleId);
 
     long countByScheduleId(Long scheduleId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT si FROM ScheduleItem si WHERE si.learningTaskId = :learningTaskId")
+    List<ScheduleItem> findByLearningTaskIdForUpdate(@Param("learningTaskId") Long learningTaskId);
 }

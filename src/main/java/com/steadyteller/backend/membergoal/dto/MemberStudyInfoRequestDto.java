@@ -33,6 +33,13 @@ public record MemberStudyInfoRequestDto(
         List<String> availableDays,
 
         @NotBlank
-        String focusArea
+        String focusArea,
+
+        @jakarta.validation.constraints.PositiveOrZero
+        Integer breakMinutes
 ) {
+    public MemberStudyInfoRequestDto(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
+                                     Integer dailyStudyHours, List<String> availableDays, String focusArea) {
+        this(title, startDate, targetDate, currentLevel, dailyStudyHours, availableDays, focusArea, null);
+    }
 }

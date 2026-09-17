@@ -2,6 +2,8 @@ package com.steadyteller.backend.schedule.dto;
 
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
+import com.steadyteller.backend.schedule.entity.ScheduleItemKind;
+import java.time.LocalTime;
 
 public record ScheduleItemResponseDto(
         Long scheduleItemId,
@@ -9,7 +11,10 @@ public record ScheduleItemResponseDto(
         String title,
         int allocatedMinutes,
         int order,
-        ScheduleItemStatus status
+        ScheduleItemStatus status,
+        ScheduleItemKind kind,
+        LocalTime startTime,
+        LocalTime endTime
 ) {
     public static ScheduleItemResponseDto from(ScheduleItem item) {
         return new ScheduleItemResponseDto(
@@ -18,7 +23,10 @@ public record ScheduleItemResponseDto(
                 item.getTitle(),
                 item.getAllocatedMinutes(),
                 item.getOrderIndex(),
-                item.getStatus()
+                item.getStatus(),
+                item.getKind(),
+                item.getStartTime(),
+                item.getEndTime()
         );
     }
 }

@@ -14,6 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -38,7 +39,7 @@ public class ScheduleItem extends BaseTimeEntity {
     @JoinColumn(name = "schedule_id", nullable = false)
     private Schedule schedule;
 
-    @Column(nullable = false)
+    @Column
     private Long learningTaskId;
 
     @Column(nullable = false)
@@ -53,6 +54,14 @@ public class ScheduleItem extends BaseTimeEntity {
 
     @Column(nullable = false)
     private int allocatedMinutes;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ScheduleItemKind kind;
+
+    private LocalTime startTime;
+
+    private LocalTime endTime;
 
     @Column(name = "order_index", nullable = false)
     private int orderIndex;
@@ -72,6 +81,7 @@ public class ScheduleItem extends BaseTimeEntity {
         this.allocatedMinutes = allocatedMinutes;
         this.orderIndex = orderIndex;
         this.status = ScheduleItemStatus.PENDING;
+        this.kind = ScheduleItemKind.REGULAR;
     }
 
     public static ScheduleItem create(Schedule schedule, Long learningTaskId, String title, LocalDate date,
@@ -86,6 +96,44 @@ public class ScheduleItem extends BaseTimeEntity {
                 .orderIndex(orderIndex)
                 .build();
     }
+
+    public static ScheduleItem createSupplement(Schedule schedule, LocalDate date, DayOfWeek dayOfWeek,
+                                                 int allocatedMinutes, int orderIndex) {
+        ScheduleItem item = ScheduleItem.builder().schedule(schedule).title("보충 시간")
+                .date(date).dayOfWeek(dayOfWeek).allocatedMinutes(allocatedMinutes).orderIndex(orderIndex).build();
+        item.kind = ScheduleItemKind.SUPPLEMENT;
+        return item;
+    }
+
+    public static ScheduleItem createBreak(Schedule schedule, LocalDate date, DayOfWeek dayOfWeek,
+                                           int minutes, int orderIndex) {
+        ScheduleItem item = ScheduleItem.builder().schedule(schedule).title("휴식")
+                .date(date).dayOfWeek(dayOfWeek).allocatedMinutes(minutes).orderIndex(orderIndex).build();
+        item.kind = ScheduleItemKind.BREAK;
+        return item;
+    }
+
+    public void assignTimeRange(LocalTime startTime, LocalTime endTime) {
+        this.startTime = startTime;
+        this.endTime = endTime;
+    }
+
+    public void assignToSupplement(Long learningTaskId, String title) {
+        if (kind != ScheduleItemKind.SUPPLEMENT || this.learningTaskId != null) {
+            throw new IllegalStateException("Only an empty supplement slot can receive a deferred task.");
+        }
+        this.learningTaskId = learningTaskId;
+        this.title = title;
+    }
+
+    /** Leaves the calendar reservation intact while removing its learning-task assignment. */
+    public void clearTask() {
+        this.learningTaskId = null;
+        this.title = "빈 일정";
+        this.status = ScheduleItemStatus.PENDING;
+    }
+
+    public void fail() { this.status = ScheduleItemStatus.FAILED; }
 
     /**
      * 사용자가 이 항목의 수행 날짜/시간을 수동으로 재배치할 때 사용한다.
