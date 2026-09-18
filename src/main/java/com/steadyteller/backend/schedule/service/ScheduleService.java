@@ -18,7 +18,6 @@ import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
-import com.steadyteller.backend.schedule.entity.ScheduleItemKind;
 import com.steadyteller.backend.schedule.entity.ScheduleFailure;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
@@ -85,10 +84,9 @@ public class ScheduleService {
         log.info("Schedule allocation completed: goalId={}, taskCount={}, allocationCount={}, dailyCapacityMinutes={}",
                 goalId, confirmedTasks.size(), allocations.size(), dailyCapacityMinutes);
 
-        ScheduleAllocator.AllocationPlan plan = new ScheduleAllocator().allocateWithSupplementDays(allocations.stream()
-                .map(ScheduleAllocator.AllocatedItem::task).toList(), earliestStart, availableDays,
-                dailyCapacityMinutes, supplementEveryRegularDays(dailyCapacityMinutes), MAX_HORIZON_DAYS);
-        List<ScheduleAllocator.AllocatedItem> plannedAllocations = plan.regularItems();
+        List<ScheduleAllocator.AllocatedItem> plannedAllocations = new ScheduleAllocator().allocate(
+                allocations.stream().map(ScheduleAllocator.AllocatedItem::task).toList(), earliestStart,
+                availableDays, dailyCapacityMinutes, MAX_HORIZON_DAYS);
         Schedule schedule = scheduleRepository.save(Schedule.create(
                 memberId,
                 goalId,
@@ -96,7 +94,7 @@ public class ScheduleService {
                 plannedAllocations.getLast().date()
         ));
 
-        List<ScheduleItem> items = createItemsWithSupplementDays(schedule, plan, dailyCapacityMinutes);
+        List<ScheduleItem> items = createRegularItems(schedule, plannedAllocations);
         assignTimeRanges(schedule.getGoalId(), items);
         scheduleItemRepository.saveAll(items);
         schedule.updatePeriod(schedule.getStartDate(), items.stream().map(ScheduleItem::getDate)
@@ -239,87 +237,28 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         if (item.getLearningTaskId() == null || item.getStatus() == ScheduleItemStatus.FINISHED) {
-            throw new IllegalArgumentException("Completed items and empty supplement slots cannot fail.");
+            throw new IllegalArgumentException("Completed schedule items cannot fail.");
         }
         if (item.getStatus() == ScheduleItemStatus.FAILED) {
             int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
-            return new ScheduleFailureResultDto(failures, false, false, "이미 실패 처리된 일정입니다.");
+            return new ScheduleFailureResultDto(failures, "이미 실패 처리된 일정입니다.");
         }
         item.fail();
         scheduleFailureRepository.save(ScheduleFailure.create(itemId, item.getLearningTaskId(), request.reasonCode(),
                 request.reasonDetail()));
         int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
         synchronizeTaskStatus(item.getLearningTaskId());
-        ScheduleItem supplement = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
-                .stream().filter(candidate -> candidate.getKind() == ScheduleItemKind.SUPPLEMENT
-                        && candidate.getLearningTaskId() == null && candidate.getStatus() == ScheduleItemStatus.PENDING
-                        && !candidate.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
-                        && candidate.getAllocatedMinutes() >= item.getAllocatedMinutes()).findFirst().orElse(null);
-        if (supplement == null) {
-            return new ScheduleFailureResultDto(failures, false, true, "보충 시간이 부족합니다.");
-        }
-        return new ScheduleFailureResultDto(failures, false, false,
-                "보충 시간이 있습니다. 사용자가 보충 시간으로 이동할 수 있습니다.");
-    }
-
-    /** Moves a failed task to an available supplement slot only when the user explicitly chooses it. */
-    @Transactional
-    public ScheduleItemResponseDto deferToSupplement(Long memberId, Long scheduleId, Long itemId) {
-        getOwnedSchedule(memberId, scheduleId);
-        ScheduleItem source = getOwnedScheduleItemForUpdate(scheduleId, itemId);
-        if (source.getLearningTaskId() == null || source.getStatus() != ScheduleItemStatus.FAILED) {
-            throw new IllegalArgumentException("Only a failed task can be moved to supplement time.");
-        }
-        ScheduleItem destination = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
-                .stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT
-                        && item.getLearningTaskId() == null
-                        && item.getStatus() == ScheduleItemStatus.PENDING
-                        && !item.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
-                        && item.getAllocatedMinutes() >= source.getAllocatedMinutes())
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("No supplement time has enough capacity."));
-        int remainingMinutes = destination.getAllocatedMinutes() - source.getAllocatedMinutes();
-        Long taskId = source.getLearningTaskId();
-        destination.assignToSupplement(taskId, source.getTitle());
-        destination.reschedule(destination.getDate(), destination.getDayOfWeek(), source.getAllocatedMinutes());
-        scheduleItemRepository.delete(source);
-        if (remainingMinutes > 0) {
-            scheduleItemRepository.save(ScheduleItem.createSupplement(destination.getSchedule(), destination.getDate(),
-                    destination.getDayOfWeek(), remainingMinutes, destination.getOrderIndex() + 1));
-        }
-        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
-        renumberOrderForDate(items, destination.getDate(), null);
-        recalculateTimeRangesForDate(destination.getSchedule().getGoalId(), destination.getDate(), items);
-        synchronizeTaskStatus(taskId);
-        return ScheduleItemResponseDto.from(destination);
-    }
-
-    private List<ScheduleItem> createItemsWithSupplementDays(Schedule schedule,
-            ScheduleAllocator.AllocationPlan plan, int dailyCapacityMinutes) {
-        List<ScheduleItem> items = createRegularItems(schedule, plan.regularItems());
-        for (LocalDate date : plan.supplementDates()) {
-            items.add(ScheduleItem.createSupplement(schedule, date, date.getDayOfWeek(), dailyCapacityMinutes, 1));
-        }
-        items.sort(Comparator.comparing(ScheduleItem::getDate).thenComparingInt(ScheduleItem::getOrderIndex));
-        return items;
-    }
-
-    private int supplementEveryRegularDays(int dailyCapacityMinutes) {
-        if (dailyCapacityMinutes <= 60) return 4;
-        if (dailyCapacityMinutes <= 120) return 3;
-        return 2;
+        return new ScheduleFailureResultDto(failures, "일정 항목을 실패 처리했습니다.");
     }
 
     private void assignTimeRanges(Long goalId, List<ScheduleItem> items) {
         java.util.Map<LocalDate, List<ScheduleItem>> byDate = items.stream().collect(
                 Collectors.groupingBy(ScheduleItem::getDate, java.util.TreeMap::new, Collectors.toList()));
         for (List<ScheduleItem> dayItems : byDate.values()) {
-            List<ScheduleItem> regulars = dayItems.stream().filter(item -> item.getKind() == ScheduleItemKind.REGULAR)
+            List<ScheduleItem> orderedItems = dayItems.stream()
                     .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList();
-            List<ScheduleItem> supplements = dayItems.stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT).toList();
             int order = 1;
-            for (ScheduleItem item : regulars) item.updateOrderIndex(order++);
-            for (ScheduleItem supplement : supplements) supplement.updateOrderIndex(order++);
+            for (ScheduleItem item : orderedItems) item.updateOrderIndex(order++);
         }
         java.util.Map<java.time.DayOfWeek, List<Availability>> availabilityByDay = availabilityRepository
                 .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId).stream().filter(Availability::isEnabled)

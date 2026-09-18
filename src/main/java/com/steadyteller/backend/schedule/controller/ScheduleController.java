@@ -115,14 +115,6 @@ public class ScheduleController {
                 scheduleService.failScheduleItem(memberId, scheduleId, itemId, request)));
     }
 
-    @PatchMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/defer-to-supplement")
-    public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> deferToSupplement(
-            @AuthenticationPrincipal Long memberId, @PathVariable Long scheduleId, @PathVariable Long itemId
-    ) {
-        return ResponseEntity.ok(ApiResponse.success("실패한 태스크를 보충 시간으로 이동했습니다.",
-                scheduleService.deferToSupplement(memberId, scheduleId, itemId)));
-    }
-
     @DeleteMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/complete")
     public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> revertScheduleItemCompletion(
             @AuthenticationPrincipal Long memberId,

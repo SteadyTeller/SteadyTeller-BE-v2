@@ -39,9 +39,7 @@ public class ScheduleItem extends BaseTimeEntity {
     @JoinColumn(name = "schedule_id", nullable = false)
     private Schedule schedule;
 
-    // SUPPLEMENT/빈 일정 슬롯은 실제 학습 태스크를 참조하지 않는다.
-    // 기존 데이터베이스의 NOT NULL 제약은 시작 시 마이그레이션으로 완화한다.
-    @Column(nullable = true)
+    @Column(nullable = false)
     private Long learningTaskId;
 
     @Column(nullable = false)
@@ -56,10 +54,6 @@ public class ScheduleItem extends BaseTimeEntity {
 
     @Column(nullable = false)
     private int allocatedMinutes;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private ScheduleItemKind kind;
 
     private LocalTime startTime;
 
@@ -83,7 +77,6 @@ public class ScheduleItem extends BaseTimeEntity {
         this.allocatedMinutes = allocatedMinutes;
         this.orderIndex = orderIndex;
         this.status = ScheduleItemStatus.PENDING;
-        this.kind = ScheduleItemKind.REGULAR;
     }
 
     public static ScheduleItem create(Schedule schedule, Long learningTaskId, String title, LocalDate date,
@@ -99,25 +92,9 @@ public class ScheduleItem extends BaseTimeEntity {
                 .build();
     }
 
-    public static ScheduleItem createSupplement(Schedule schedule, LocalDate date, DayOfWeek dayOfWeek,
-                                                 int allocatedMinutes, int orderIndex) {
-        ScheduleItem item = ScheduleItem.builder().schedule(schedule).title("보충 시간")
-                .date(date).dayOfWeek(dayOfWeek).allocatedMinutes(allocatedMinutes).orderIndex(orderIndex).build();
-        item.kind = ScheduleItemKind.SUPPLEMENT;
-        return item;
-    }
-
     public void assignTimeRange(LocalTime startTime, LocalTime endTime) {
         this.startTime = startTime;
         this.endTime = endTime;
-    }
-
-    public void assignToSupplement(Long learningTaskId, String title) {
-        if (kind != ScheduleItemKind.SUPPLEMENT || this.learningTaskId != null) {
-            throw new IllegalStateException("Only an empty supplement slot can receive a deferred task.");
-        }
-        this.learningTaskId = learningTaskId;
-        this.title = title;
     }
 
     public void fail() { this.status = ScheduleItemStatus.FAILED; }

@@ -2,7 +2,6 @@ package com.steadyteller.backend.schedule.dto;
 
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
-import com.steadyteller.backend.schedule.entity.ScheduleItemKind;
 import java.time.LocalTime;
 
 public record ScheduleItemResponseDto(
@@ -12,7 +11,6 @@ public record ScheduleItemResponseDto(
         int allocatedMinutes,
         int order,
         ScheduleItemStatus status,
-        ScheduleItemKind kind,
         LocalTime startTime,
         LocalTime endTime
 ) {
@@ -24,7 +22,6 @@ public record ScheduleItemResponseDto(
                 item.getAllocatedMinutes(),
                 item.getOrderIndex(),
                 item.getStatus(),
-                item.getKind(),
                 item.getStartTime(),
                 item.getEndTime()
         );
