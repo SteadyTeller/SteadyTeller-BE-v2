@@ -32,7 +32,6 @@ public class MemberGoalService {
                 .startDate(request.startDate())
                 .targetDate(request.targetDate())
                 .currentLevel(request.currentLevel())
-                .breakMinutes(request.breakMinutes())
                 .mustStudyTopics(request.mustStudyTopics())
                 .build();
 
@@ -58,7 +57,6 @@ public class MemberGoalService {
                 request.startDate(),
                 request.targetDate(),
                 request.currentLevel(),
-                request.breakMinutes(),
                 request.mustStudyTopics()
         );
         return MemberGoalResponseDto.from(goal);

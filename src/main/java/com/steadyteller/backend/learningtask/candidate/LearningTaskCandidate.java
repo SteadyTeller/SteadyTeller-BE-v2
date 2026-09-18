@@ -35,9 +35,6 @@ public class LearningTaskCandidate extends BaseTimeEntity {
     private Long goalId;
 
     @Column(nullable = false)
-    private Long memberId;
-
-    @Column(nullable = false)
     private String title;
 
     @Column(nullable = false)
@@ -60,11 +57,10 @@ public class LearningTaskCandidate extends BaseTimeEntity {
     private boolean modified;
 
     @Builder
-    public LearningTaskCandidate(Long goalId, Long memberId, String title, String category, String subject,
+    public LearningTaskCandidate(Long goalId, String title, String category, String subject,
                                   Integer difficulty, Integer allocatedMinutes, LearningTaskSource source,
                                   boolean modified) {
         this.goalId = goalId;
-        this.memberId = memberId;
         this.title = title;
         this.category = category;
         this.subject = subject;
@@ -72,11 +68,6 @@ public class LearningTaskCandidate extends BaseTimeEntity {
         this.allocatedMinutes = allocatedMinutes;
         this.source = source;
         this.modified = modified;
-    }
-
-    // importance는 프론트 표시 전용 값으로, difficulty와 동일한 값을 사용한다.
-    public Integer getImportance() {
-        return difficulty;
     }
 
     public void update(String title, String category, String subject, Integer difficulty, Integer allocatedMinutes) {

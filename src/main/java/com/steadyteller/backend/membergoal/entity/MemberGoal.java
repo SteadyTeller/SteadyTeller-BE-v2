@@ -50,9 +50,6 @@ public class MemberGoal extends BaseTimeEntity {
     @Column(nullable = false)
     private String currentLevel;
 
-    @Column(nullable = false)
-    private Integer breakMinutes = 0;
-
     @ElementCollection
     @CollectionTable(name = "member_goal_must_study_topics", joinColumns = @JoinColumn(name = "member_goal_id"))
     @Column(name = "topic", nullable = false)
@@ -62,25 +59,26 @@ public class MemberGoal extends BaseTimeEntity {
     @Column(nullable = false)
     private GoalStatus status = GoalStatus.IN_PROGRESS;
 
+    @Column(nullable = false)
+    private boolean taskGenerationLocked;
+
     @Builder
     public MemberGoal(Long memberId, String title, LocalDate startDate, LocalDate targetDate,
-                       String currentLevel, Integer breakMinutes, List<String> mustStudyTopics) {
+                       String currentLevel, List<String> mustStudyTopics) {
         this.memberId = memberId;
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
         this.currentLevel = currentLevel;
-        this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
         this.mustStudyTopics = new ArrayList<>(mustStudyTopics);
     }
 
     public void update(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
-                        Integer breakMinutes, List<String> mustStudyTopics) {
+                        List<String> mustStudyTopics) {
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
         this.currentLevel = currentLevel;
-        this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
         this.mustStudyTopics = new ArrayList<>(mustStudyTopics);
     }
 
@@ -96,5 +94,9 @@ public class MemberGoal extends BaseTimeEntity {
 
     public void close() {
         this.status = GoalStatus.CLOSED;
+    }
+
+    public void lockTaskGeneration() {
+        this.taskGenerationLocked = true;
     }
 }

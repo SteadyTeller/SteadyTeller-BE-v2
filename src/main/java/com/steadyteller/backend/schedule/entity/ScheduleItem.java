@@ -39,7 +39,7 @@ public class ScheduleItem extends BaseTimeEntity {
     @JoinColumn(name = "schedule_id", nullable = false)
     private Schedule schedule;
 
-    // BREAK/SUPPLEMENT/빈 일정 슬롯은 실제 학습 태스크를 참조하지 않는다.
+    // SUPPLEMENT/빈 일정 슬롯은 실제 학습 태스크를 참조하지 않는다.
     // 기존 데이터베이스의 NOT NULL 제약은 시작 시 마이그레이션으로 완화한다.
     @Column(nullable = true)
     private Long learningTaskId;
@@ -107,14 +107,6 @@ public class ScheduleItem extends BaseTimeEntity {
         return item;
     }
 
-    public static ScheduleItem createBreak(Schedule schedule, LocalDate date, DayOfWeek dayOfWeek,
-                                           int minutes, int orderIndex) {
-        ScheduleItem item = ScheduleItem.builder().schedule(schedule).title("휴식")
-                .date(date).dayOfWeek(dayOfWeek).allocatedMinutes(minutes).orderIndex(orderIndex).build();
-        item.kind = ScheduleItemKind.BREAK;
-        return item;
-    }
-
     public void assignTimeRange(LocalTime startTime, LocalTime endTime) {
         this.startTime = startTime;
         this.endTime = endTime;
@@ -126,19 +118,6 @@ public class ScheduleItem extends BaseTimeEntity {
         }
         this.learningTaskId = learningTaskId;
         this.title = title;
-    }
-
-    /** Leaves the calendar reservation intact while removing its learning-task assignment. */
-    public void clearTask() {
-        this.learningTaskId = null;
-        this.title = "빈 일정";
-        this.status = ScheduleItemStatus.PENDING;
-    }
-
-    public void turnIntoSupplement() {
-        clearTask();
-        this.kind = ScheduleItemKind.SUPPLEMENT;
-        this.title = "보충 시간";
     }
 
     public void fail() { this.status = ScheduleItemStatus.FAILED; }

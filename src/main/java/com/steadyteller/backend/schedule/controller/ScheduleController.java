@@ -119,16 +119,8 @@ public class ScheduleController {
     public ResponseEntity<ApiResponse<ScheduleItemResponseDto>> deferToSupplement(
             @AuthenticationPrincipal Long memberId, @PathVariable Long scheduleId, @PathVariable Long itemId
     ) {
-        return ResponseEntity.ok(ApiResponse.success("가장 빠른 보충일로 일정을 미뤘습니다.",
+        return ResponseEntity.ok(ApiResponse.success("실패한 태스크를 보충 시간으로 이동했습니다.",
                 scheduleService.deferToSupplement(memberId, scheduleId, itemId)));
-    }
-
-    @PostMapping("/api/v1/schedules/{scheduleId}/replan-remaining")
-    public ResponseEntity<ApiResponse<ScheduleResponseDto>> replanRemaining(
-            @AuthenticationPrincipal Long memberId, @PathVariable Long scheduleId
-    ) {
-        return ResponseEntity.ok(ApiResponse.success("완료한 태스크를 제외하고 남은 일정을 재조정했습니다.",
-                scheduleService.replanRemaining(memberId, scheduleId)));
     }
 
     @DeleteMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/complete")

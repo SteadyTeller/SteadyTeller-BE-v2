@@ -20,7 +20,6 @@ import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
 import com.steadyteller.backend.schedule.entity.ScheduleItemKind;
 import com.steadyteller.backend.schedule.entity.ScheduleFailure;
-import com.steadyteller.backend.schedule.entity.FailureHandlingAction;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
@@ -69,7 +68,7 @@ public class ScheduleService {
         MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
         log.info("Schedule generation started: memberId={}, goalId={}, title={}", memberId, goalId, goal.getTitle());
         List<LearningTask> confirmedTasks =
-                learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
+                learningTaskRepository.findUnscheduledByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
         if (confirmedTasks.isEmpty()) {
             log.warn("Schedule generation rejected: no confirmed pending tasks. goalId={}", goalId);
             throw new CustomException(ScheduleErrorCode.NO_CONFIRMED_TASKS);
@@ -98,14 +97,10 @@ public class ScheduleService {
         ));
 
         List<ScheduleItem> items = createItemsWithSupplementDays(schedule, plan, dailyCapacityMinutes);
-        insertBreaksAndAssignTimeRanges(memberId, schedule.getGoalId(), items, goal.getBreakMinutes());
+        assignTimeRanges(schedule.getGoalId(), items);
         scheduleItemRepository.saveAll(items);
         schedule.updatePeriod(schedule.getStartDate(), items.stream().map(ScheduleItem::getDate)
                 .max(LocalDate::compareTo).orElse(schedule.getEndDate()));
-
-        for (LearningTask task : confirmedTasks) {
-            task.markAsScheduled();
-        }
 
         log.info("Schedule generation completed: scheduleId={}, goalId={}, itemCount={}, startDate={}, endDate={}",
                 schedule.getId(), goalId, items.size(), schedule.getStartDate(), schedule.getEndDate());
@@ -133,16 +128,9 @@ public class ScheduleService {
         List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
         List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId)
                 .filter(java.util.Objects::nonNull).distinct().toList();
-        if (!taskIds.isEmpty()) {
-            List<LearningTask> tasks = learningTaskRepository.findAllById(taskIds);
-            for (LearningTask task : tasks) {
-                if (task.getStatus() == LearningTaskStatus.SCHEDULED) {
-                    task.markAsPending();
-                }
-            }
-        }
         scheduleItemRepository.deleteAll(items);
         scheduleItemRepository.flush();
+        synchronizeTaskStatuses(taskIds);
         scheduleRepository.delete(schedule);
     }
 
@@ -212,6 +200,7 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.start();
+        synchronizeTaskStatus(item.getLearningTaskId());
         return ScheduleItemResponseDto.from(item);
     }
 
@@ -226,6 +215,7 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.finish();
+        synchronizeTaskStatus(item.getLearningTaskId());
         return ScheduleItemResponseDto.from(item);
     }
 
@@ -239,6 +229,7 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.revertCompletion();
+        synchronizeTaskStatus(item.getLearningTaskId());
         return ScheduleItemResponseDto.from(item);
     }
 
@@ -252,113 +243,55 @@ public class ScheduleService {
         }
         if (item.getStatus() == ScheduleItemStatus.FAILED) {
             int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
-            boolean splitRecommended = failures >= 3;
-            return new ScheduleFailureResultDto(failures, false, false, splitRecommended, false,
-                    splitRecommended ? "이 태스크는 3번 이상 실패했습니다. 목표 하향 조정을 권장합니다." : "이미 실패 처리된 일정입니다.");
+            return new ScheduleFailureResultDto(failures, false, false, "이미 실패 처리된 일정입니다.");
         }
         item.fail();
         scheduleFailureRepository.save(ScheduleFailure.create(itemId, item.getLearningTaskId(), request.reasonCode(),
-                request.reasonDetail(), request.action()));
+                request.reasonDetail()));
         int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
-        boolean splitRecommended = failures >= 3;
-        if (request.action() == FailureHandlingAction.REPLAN_REMAINING) {
-            replanRemainingInternal(memberId, scheduleId);
-            return new ScheduleFailureResultDto(failures, false, false, splitRecommended, true,
-                    splitRecommended ? "동일 태스크가 3회 이상 실패했습니다. 재배치 후 태스크 분할을 권유합니다."
-                            : "완료하지 않은 태스크만 유지하여 남은 일정을 재조정했습니다.");
-        }
+        synchronizeTaskStatus(item.getLearningTaskId());
         ScheduleItem supplement = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
                 .stream().filter(candidate -> candidate.getKind() == ScheduleItemKind.SUPPLEMENT
                         && candidate.getLearningTaskId() == null && candidate.getStatus() == ScheduleItemStatus.PENDING
                         && !candidate.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
                         && candidate.getAllocatedMinutes() >= item.getAllocatedMinutes()).findFirst().orElse(null);
         if (supplement == null) {
-            return new ScheduleFailureResultDto(failures, false, true, splitRecommended, true,
-                    splitRecommended ? "보충 시간이 부족하고 3회 이상 실패했습니다. 태스크 분할 또는 남은 일정 재조정을 권유합니다."
-                            : "보충 시간이 부족합니다. 남은 일정 전체 재조정 또는 목표일 연장을 권유합니다.");
+            return new ScheduleFailureResultDto(failures, false, true, "보충 시간이 부족합니다.");
         }
-        supplement.assignToSupplement(item.getLearningTaskId(), item.getTitle());
-        return new ScheduleFailureResultDto(failures, true, false, splitRecommended, false,
-                splitRecommended ? "보충 시간에 배치했습니다. 동일 태스크가 3회 이상 실패하여 분할도 권유합니다."
-                        : "보충 시간에 실패한 태스크를 배치했습니다.");
+        return new ScheduleFailureResultDto(failures, false, false,
+                "보충 시간이 있습니다. 사용자가 보충 시간으로 이동할 수 있습니다.");
     }
 
-    /** User-initiated postponement: normal calendar dates are never accepted as a destination. */
+    /** Moves a failed task to an available supplement slot only when the user explicitly chooses it. */
     @Transactional
     public ScheduleItemResponseDto deferToSupplement(Long memberId, Long scheduleId, Long itemId) {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem source = getOwnedScheduleItemForUpdate(scheduleId, itemId);
-        if (source.getLearningTaskId() == null || source.getStatus() == ScheduleItemStatus.FINISHED) {
-            throw new IllegalArgumentException("Only an unfinished task can be deferred.");
+        if (source.getLearningTaskId() == null || source.getStatus() != ScheduleItemStatus.FAILED) {
+            throw new IllegalArgumentException("Only a failed task can be moved to supplement time.");
         }
         ScheduleItem destination = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
                 .stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT
-                        && item.getLearningTaskId() == null && !item.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
-                        && item.getAllocatedMinutes() >= source.getAllocatedMinutes()).findFirst()
-                .orElseThrow(() -> new IllegalStateException("No supplement day has enough remaining time."));
+                        && item.getLearningTaskId() == null
+                        && item.getStatus() == ScheduleItemStatus.PENDING
+                        && !item.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
+                        && item.getAllocatedMinutes() >= source.getAllocatedMinutes())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No supplement time has enough capacity."));
         int remainingMinutes = destination.getAllocatedMinutes() - source.getAllocatedMinutes();
-        Long originalLearningTaskId = source.getLearningTaskId();
-        destination.assignToSupplement(originalLearningTaskId, source.getTitle());
+        Long taskId = source.getLearningTaskId();
+        destination.assignToSupplement(taskId, source.getTitle());
         destination.reschedule(destination.getDate(), destination.getDayOfWeek(), source.getAllocatedMinutes());
-        source.turnIntoSupplement();
-        
+        scheduleItemRepository.delete(source);
         if (remainingMinutes > 0) {
-            ScheduleItem newSupplement = ScheduleItem.createSupplement(
-                    destination.getSchedule(), destination.getDate(), destination.getDayOfWeek(), remainingMinutes, destination.getOrderIndex() + 1);
-            scheduleItemRepository.saveAndFlush(newSupplement);
-            List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
-            renumberOrderForDate(items, destination.getDate(), null);
+            scheduleItemRepository.save(ScheduleItem.createSupplement(destination.getSchedule(), destination.getDate(),
+                    destination.getDayOfWeek(), remainingMinutes, destination.getOrderIndex() + 1));
         }
-        
-        List<ScheduleItem> finalItems = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
-        recalculateTimeRangesForDate(destination.getSchedule().getGoalId(), destination.getDate(), finalItems);
-        if (!source.getDate().equals(destination.getDate())) {
-            recalculateTimeRangesForDate(source.getSchedule().getGoalId(), source.getDate(), finalItems);
-        }
-        
-        if (scheduleFailureRepository != null) {
-            scheduleFailureRepository.save(ScheduleFailure.create(itemId, originalLearningTaskId, com.steadyteller.backend.schedule.entity.FailureReasonCode.USER_DEFERRED, "사용자 직접 미루기", com.steadyteller.backend.schedule.entity.FailureHandlingAction.DEFER_TO_SUPPLEMENT));
-        }
+        List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
+        renumberOrderForDate(items, destination.getDate(), null);
+        recalculateTimeRangesForDate(destination.getSchedule().getGoalId(), destination.getDate(), items);
+        synchronizeTaskStatus(taskId);
         return ScheduleItemResponseDto.from(destination);
-    }
-
-    @Transactional
-    public ScheduleResponseDto replanRemaining(Long memberId, Long scheduleId) {
-        return replanRemainingInternal(memberId, scheduleId);
-    }
-
-    /** Keeps FINISHED items and recreates only failed/pending/in-progress task placements. */
-    private ScheduleResponseDto replanRemainingInternal(Long memberId, Long scheduleId) {
-        Schedule schedule = getOwnedSchedule(memberId, scheduleId);
-        MemberGoal goal = getOwnedGoalForUpdate(memberId, schedule.getGoalId());
-        List<ScheduleItem> all = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
-        List<Long> taskIds = all.stream().filter(item -> item.getStatus() != ScheduleItemStatus.FINISHED
-                        && item.getLearningTaskId() != null).map(ScheduleItem::getLearningTaskId).distinct().toList();
-        if (taskIds.isEmpty()) return ScheduleResponseDto.of(schedule, all);
-        java.util.Map<Long, LearningTask> byId = learningTaskRepository.findAllById(taskIds).stream()
-                .collect(Collectors.toMap(LearningTask::getId, task -> task));
-        List<LearningTask> remaining = taskIds.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
-        validateAllocatedMinutes(remaining);
-        List<ScheduleItem> replaceable = all.stream().filter(item -> item.getStatus() != ScheduleItemStatus.FINISHED).toList();
-        scheduleItemRepository.deleteAll(replaceable);
-        scheduleItemRepository.flush();
-        Set<DayOfWeek> availableDays = resolveAvailableDays(memberId, goal);
-        int capacity = calculateDailyCapacityMinutes(memberId, goal, availableDays);
-        ScheduleAllocator.AllocationPlan plan = new ScheduleAllocator().allocateWithSupplementDays(remaining, earliestStart(goal),
-                availableDays, capacity, supplementEveryRegularDays(capacity), MAX_HORIZON_DAYS);
-        List<ScheduleAllocator.AllocatedItem> allocations = plan.regularItems();
-        List<ScheduleItem> replanned = createItemsWithSupplementDays(schedule, plan, capacity);
-        insertBreaksAndAssignTimeRanges(memberId, schedule.getGoalId(), replanned, goal.getBreakMinutes());
-        scheduleItemRepository.saveAll(replanned);
-        LocalDate start = all.stream().filter(item -> item.getStatus() == ScheduleItemStatus.FINISHED)
-                .map(ScheduleItem::getDate).min(LocalDate::compareTo).orElse(allocations.getFirst().date());
-        LocalDate end = replanned.stream().map(ScheduleItem::getDate).max(LocalDate::compareTo).orElse(start);
-        schedule.updatePeriod(start, end);
-        List<ScheduleItem> response = new ArrayList<>(all.stream()
-                .filter(item -> item.getStatus() == ScheduleItemStatus.FINISHED).toList());
-        response.addAll(replanned);
-        response.sort(Comparator.comparing(ScheduleItem::getDate).thenComparingInt(ScheduleItem::getOrderIndex));
-        return ScheduleResponseDto.of(schedule, response);
     }
 
     private List<ScheduleItem> createItemsWithSupplementDays(Schedule schedule,
@@ -377,25 +310,17 @@ public class ScheduleService {
         return 2;
     }
 
-    private void insertBreaksAndAssignTimeRanges(Long memberId, Long goalId, List<ScheduleItem> items, int breakMinutes) {
+    private void assignTimeRanges(Long goalId, List<ScheduleItem> items) {
         java.util.Map<LocalDate, List<ScheduleItem>> byDate = items.stream().collect(
                 Collectors.groupingBy(ScheduleItem::getDate, java.util.TreeMap::new, Collectors.toList()));
-        List<ScheduleItem> result = new ArrayList<>();
         for (List<ScheduleItem> dayItems : byDate.values()) {
             List<ScheduleItem> regulars = dayItems.stream().filter(item -> item.getKind() == ScheduleItemKind.REGULAR)
                     .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList();
             List<ScheduleItem> supplements = dayItems.stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT).toList();
             int order = 1;
-            for (int i = 0; i < regulars.size(); i++) {
-                ScheduleItem item = regulars.get(i); item.updateOrderIndex(order++); result.add(item);
-                if (breakMinutes > 0 && i < regulars.size() - 1) {
-                    result.add(ScheduleItem.createBreak(item.getSchedule(), item.getDate(), item.getDayOfWeek(), breakMinutes, order++));
-                }
-            }
-            for (ScheduleItem supplement : supplements) { supplement.updateOrderIndex(order++); result.add(supplement); }
+            for (ScheduleItem item : regulars) item.updateOrderIndex(order++);
+            for (ScheduleItem supplement : supplements) supplement.updateOrderIndex(order++);
         }
-        items.clear(); items.addAll(result);
-        if (availabilityRepository == null) return;
         java.util.Map<java.time.DayOfWeek, List<Availability>> availabilityByDay = availabilityRepository
                 .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId).stream().filter(Availability::isEnabled)
                 .collect(Collectors.groupingBy(Availability::getDayOfWeek));
@@ -561,5 +486,30 @@ public class ScheduleService {
             item.assignTimeRange(cursor, calculatedEnd);
             cursor = calculatedEnd;
         }
+    }
+
+    private void synchronizeTaskStatuses(List<Long> taskIds) {
+        taskIds.stream().filter(java.util.Objects::nonNull).distinct().forEach(this::synchronizeTaskStatus);
+    }
+
+    /** Derives a task's progress exclusively from the schedule items currently assigned to it. */
+    private void synchronizeTaskStatus(Long taskId) {
+        if (taskId == null) {
+            return;
+        }
+        learningTaskRepository.findById(taskId).ifPresent(task -> {
+            List<ScheduleItem> items = scheduleItemRepository.findByLearningTaskIdOrderByDateAscOrderIndexAsc(taskId);
+            LearningTaskStatus status;
+            if (!items.isEmpty() && items.stream().allMatch(item -> item.getStatus() == ScheduleItemStatus.FINISHED)) {
+                status = LearningTaskStatus.FINISHED;
+            } else if (items.stream().anyMatch(item -> item.getStatus() == ScheduleItemStatus.IN_PROGRESS)) {
+                status = LearningTaskStatus.IN_PROGRESS;
+            } else if (items.stream().anyMatch(item -> item.getStatus() == ScheduleItemStatus.FAILED)) {
+                status = LearningTaskStatus.FAILED;
+            } else {
+                status = LearningTaskStatus.PENDING;
+            }
+            task.updateStatus(status);
+        });
     }
 }

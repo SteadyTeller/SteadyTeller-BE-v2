@@ -12,9 +12,9 @@ public record MemberGoalResponseDto(
         LocalDate startDate,
         LocalDate targetDate,
         String currentLevel,
-        Integer breakMinutes,
         List<String> mustStudyTopics,
         com.steadyteller.backend.membergoal.entity.GoalStatus status,
+        boolean taskGenerationLocked,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -26,9 +26,9 @@ public record MemberGoalResponseDto(
                 goal.getStartDate(),
                 goal.getTargetDate(),
                 goal.getCurrentLevel(),
-                goal.getBreakMinutes(),
                 goal.getMustStudyTopics(),
                 goal.getStatus(),
+                goal.isTaskGenerationLocked(),
                 goal.getCreatedAt(),
                 goal.getUpdatedAt()
         );

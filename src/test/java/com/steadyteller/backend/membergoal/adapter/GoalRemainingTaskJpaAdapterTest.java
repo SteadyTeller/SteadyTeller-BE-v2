@@ -40,7 +40,7 @@ class GoalRemainingTaskJpaAdapterTest {
 
     private LearningTask task(Long goalId) {
         return tasks.save(LearningTask.builder().goalId(goalId).title("Java")
-                .category("개발").subject("Java").importance(3).difficulty(3)
+                .category("개발").subject("Java").difficulty(3)
                 .allocatedMinutes(30).source(LearningTaskSource.AI_GENERATED).isModified(false).build());
     }
 

@@ -2,6 +2,7 @@ package com.steadyteller.backend.learningtask.controller;
 
 import com.steadyteller.backend.global.common.ApiResponse;
 import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateRequestDto;
+import com.steadyteller.backend.learningtask.dto.CandidateAvailabilityStatusResponseDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateResponseDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskResponseDto;
 import com.steadyteller.backend.learningtask.service.LearningTaskService;
@@ -48,6 +49,14 @@ public class LearningTaskController {
         return ResponseEntity.ok(ApiResponse.success(learningTaskService.getCandidates(memberId, goalId)));
     }
 
+    @GetMapping("/goals/{goalId}/tasks/capacity-status")
+    public ResponseEntity<ApiResponse<CandidateAvailabilityStatusResponseDto>> getCandidateAvailabilityStatus(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long goalId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                learningTaskService.getCandidateAvailabilityStatus(memberId, goalId)));
+    }
+
     // 확정된 태스크 목록 조회. 확정 뒤 후보 목록은 비워지므로, 할 일 목록 화면은 이 API를 사용한다.
     @GetMapping("/goals/{goalId}/tasks/confirmed")
     public ResponseEntity<ApiResponse<List<LearningTaskResponseDto>>> getConfirmedTasks(
@@ -89,7 +98,7 @@ public class LearningTaskController {
     public ResponseEntity<ApiResponse<Void>> deleteConfirmedTask(
             @AuthenticationPrincipal Long memberId, @PathVariable Long taskId) {
         learningTaskService.deleteConfirmedTask(memberId, taskId);
-        return ResponseEntity.ok(ApiResponse.success("확정 태스크를 삭제하고 기존 일정은 빈 일정으로 유지했습니다.", null));
+        return ResponseEntity.ok(ApiResponse.success("미완료 태스크와 연결된 일정이 삭제되었습니다.", null));
     }
 
     // 최종 승인: 현재 후보 목록을 LearningTask로 일괄 저장 (status=PENDING) 후 후보 캐시 비움

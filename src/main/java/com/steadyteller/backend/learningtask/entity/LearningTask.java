@@ -9,7 +9,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -42,10 +41,6 @@ public class LearningTask extends BaseTimeEntity {
     @Column(nullable = false)
     private String subject;
 
-    // 프론트 표시 전용 값. difficulty를 기준으로 산정되며 스케줄링 로직에는 직접 반영되지 않는다.
-    @Column(nullable = false)
-    private Integer importance;
-
     @Column(nullable = false)
     private Integer difficulty;
 
@@ -63,30 +58,21 @@ public class LearningTask extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean isModified;
 
-    @Column(nullable = false)
-    private LocalDateTime reviewedAt;
-
     @Builder
-    public LearningTask(Long goalId, String title, String category, String subject, Integer importance,
-                         Integer difficulty, Integer allocatedMinutes, LearningTaskSource source, boolean isModified) {
+    public LearningTask(Long goalId, String title, String category, String subject, Integer difficulty,
+                         Integer allocatedMinutes, LearningTaskSource source, boolean isModified) {
         this.goalId = goalId;
         this.title = title;
         this.category = category;
         this.subject = subject;
-        this.importance = importance;
         this.difficulty = difficulty;
         this.allocatedMinutes = allocatedMinutes;
         this.status = LearningTaskStatus.PENDING;
         this.source = source;
         this.isModified = isModified;
-        this.reviewedAt = LocalDateTime.now();
     }
 
-    public void markAsScheduled() {
-        this.status = LearningTaskStatus.SCHEDULED;
-    }
-
-    public void markAsPending() {
-        this.status = LearningTaskStatus.PENDING;
+    public void updateStatus(LearningTaskStatus status) {
+        this.status = status;
     }
 }

@@ -30,7 +30,7 @@ public class GoalDeadlineController {
     public ResponseEntity<ApiResponse<GoalContinuationResponse>> continueGoal(
             @AuthenticationPrincipal Long memberId, @PathVariable Long goalId,
             @Valid @RequestBody GoalContinuationRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("목표 완료 예정일을 연장하고 남은 일정을 재계산했습니다.",
+        return ResponseEntity.ok(ApiResponse.success("목표 완료 예정일을 연장했습니다.",
                 goalDeadlineService.continueGoal(memberId, goalId, request)));
     }
 }

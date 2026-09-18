@@ -24,14 +24,12 @@ public class ScheduleFailure extends BaseTimeEntity {
     @Column(nullable = false) private Long learningTaskId;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 50) private FailureReasonCode reasonCode;
     @Column(length = 1000) private String reasonDetail;
-    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 30) private FailureHandlingAction action;
 
-    private ScheduleFailure(Long itemId, Long taskId, FailureReasonCode code, String detail, FailureHandlingAction action) {
+    private ScheduleFailure(Long itemId, Long taskId, FailureReasonCode code, String detail) {
         this.scheduleItemId = itemId; this.learningTaskId = taskId; this.reasonCode = code;
-        this.reasonDetail = detail; this.action = action;
+        this.reasonDetail = detail;
     }
-    public static ScheduleFailure create(Long itemId, Long taskId, FailureReasonCode code, String detail,
-                                         FailureHandlingAction action) {
-        return new ScheduleFailure(itemId, taskId, code, detail, action);
+    public static ScheduleFailure create(Long itemId, Long taskId, FailureReasonCode code, String detail) {
+        return new ScheduleFailure(itemId, taskId, code, detail);
     }
 }

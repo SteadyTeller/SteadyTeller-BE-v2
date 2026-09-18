@@ -21,7 +21,7 @@ public class LearningTaskAiService {
     private final ChatClient chatClient;
 
     public List<AiGeneratedTaskDto> generateTasks(MemberGoal goal) {
-        return generateTasks(goal, "No availability constraint was provided.");
+        return generateTasks(goal, "가용 시간 정보가 제공되지 않았습니다.");
     }
 
     public List<AiGeneratedTaskDto> generateTasks(MemberGoal goal, String availabilityConstraint) {
@@ -51,16 +51,23 @@ public class LearningTaskAiService {
 
     private String buildPrompt(MemberGoal goal, String availabilityConstraint) {
         return """
-                You are an expert learning coach. Generate an editable list of learning tasks.
-                Goal: %s
-                Start date: %s
-                Target date: %s
-                Current level: %s
-                Required study topics: %s
+                당신은 한국인 학습자를 위한 전문 학습 코치입니다. 사용자가 검토하고 수정할 수 있는 학습 태스크 목록을 생성하세요.
 
-                Return JSON task objects with title, category, subject, difficulty (1-5), and allocatedMinutes.
-                Required study topics must be prioritized. Keep each task small enough for one contiguous availability window.
+                [학습 목표]
+                - 목표명: %s
+                - 시작일: %s
+                - 목표일: %s
+                - 현재 수준: %s
+                - 꼭 하고 싶은 공부: %s
+
+                [응답 규칙]
+                - 반드시 JSON 배열로 응답하세요.
+                - 각 항목에는 title, category, subject, difficulty(1~5), allocatedMinutes 필드를 포함하세요.
+                - title, category, subject는 모두 자연스러운 한국어로 작성하세요.
+                - '꼭 하고 싶은 공부' 항목을 우선 반영하세요.
+                - 태스크는 이후 여러 일정 슬롯으로 분할될 수 있습니다.
+                - 태스크들의 allocatedMinutes 합계는 아래 가용 시간 제약을 넘지 않아야 합니다.
                 """.formatted(goal.getTitle(), goal.getStartDate(), goal.getTargetDate(), goal.getCurrentLevel(),
-                goal.getMustStudyTopics()) + "\nAvailability constraint:\n" + availabilityConstraint;
+                goal.getMustStudyTopics()) + "\n[가용 시간 제약]\n" + availabilityConstraint;
     }
 }

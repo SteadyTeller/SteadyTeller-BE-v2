@@ -12,14 +12,12 @@ public record LearningTaskResponseDto(
         String title,
         String category,
         String subject,
-        Integer importance,
         Integer difficulty,
         Integer allocatedMinutes,
         LearningTaskStatus status,
         LearningTaskSource source,
         boolean isModified,
         List<TaskSchedulePlacementResponseDto> scheduleItems,
-        LocalDateTime reviewedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -30,14 +28,12 @@ public record LearningTaskResponseDto(
                 task.getTitle(),
                 task.getCategory(),
                 task.getSubject(),
-                task.getImportance(),
                 task.getDifficulty(),
                 task.getAllocatedMinutes(),
                 task.getStatus(),
                 task.getSource(),
                 task.isModified(),
                 scheduleItems,
-                task.getReviewedAt(),
                 task.getCreatedAt(),
                 task.getUpdatedAt()
         );

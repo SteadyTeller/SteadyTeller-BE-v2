@@ -26,8 +26,5 @@ public record MemberStudyInfoRequestDto(
         String currentLevel,
 
         @NotEmpty
-        List<@NotBlank @Size(max = 200) String> mustStudyTopics,
-
-        @jakarta.validation.constraints.PositiveOrZero
-        Integer breakMinutes
+        List<@NotBlank @Size(max = 200) String> mustStudyTopics
 ) { }

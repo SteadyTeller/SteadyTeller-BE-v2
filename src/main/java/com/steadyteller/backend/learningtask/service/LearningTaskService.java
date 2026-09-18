@@ -6,6 +6,7 @@ import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.learningtask.candidate.LearningTaskCandidate;
 import com.steadyteller.backend.learningtask.dto.AiGeneratedTaskDto;
+import com.steadyteller.backend.learningtask.dto.CandidateAvailabilityStatusResponseDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateRequestDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateResponseDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskResponseDto;
@@ -16,14 +17,15 @@ import com.steadyteller.backend.learningtask.exception.LearningTaskErrorCode;
 import com.steadyteller.backend.learningtask.repository.LearningTaskCandidateRepository;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
+import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.member.domain.Availability;
+import com.steadyteller.backend.member.repository.AvailabilityRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,7 +38,6 @@ import org.springframework.transaction.annotation.Transactional;
  * 해당 MemberGoal 로우에 비관적 락을 먼저 잡고 트랜잭션이 끝날 때까지 유지해, goalId 단위로 서로 직렬화되게 한다.
  */
 @Service
-@Slf4j
 @RequiredArgsConstructor
 public class LearningTaskService {
 
@@ -46,6 +47,7 @@ public class LearningTaskService {
     private final LearningTaskAiService learningTaskAiService;
     private final ScheduleItemRepository scheduleItemRepository;
     private final com.steadyteller.backend.schedule.repository.ScheduleFailureRepository scheduleFailureRepository;
+    private final AvailabilityRepository availabilityRepository;
 
     /**
      * AI 세부 태스크 생성 (설계 명세 2번). 기존에 남아있던 해당 goal의 후보는 새 결과로 교체된다.
@@ -53,13 +55,25 @@ public class LearningTaskService {
     @Transactional
     public List<LearningTaskCandidateResponseDto> generateTasks(Long memberId, Long goalId) {
         MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
-        List<AiGeneratedTaskDto> aiResults = learningTaskAiService.generateTasks(goal);
+        assertTaskGenerationAllowed(goal);
+        List<Availability> availabilities = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId);
+        int totalAvailableMinutes = totalAvailabilityMinutes(goal, availabilities);
+        if (totalAvailableMinutes <= 0) {
+            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
+        }
+        String constraint = "목표일 전까지 총 가용 학습 시간: %d분; 시간대: %s"
+                .formatted(totalAvailableMinutes, summarizeAvailability(availabilities));
+        List<AiGeneratedTaskDto> aiResults = learningTaskAiService.generateTasks(goal, constraint);
+        int generatedMinutes = aiResults.stream().mapToInt(AiGeneratedTaskDto::allocatedMinutes).sum();
+        if (generatedMinutes > totalAvailableMinutes) {
+            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
+        }
 
         candidateRepository.deleteByGoalId(goalId);
         List<LearningTaskCandidate> newCandidates = aiResults.stream()
                 .map(result -> LearningTaskCandidate.builder()
                         .goalId(goalId)
-                        .memberId(memberId)
                         .title(result.title())
                         .category(result.category())
                         .subject(result.subject())
@@ -72,41 +86,6 @@ public class LearningTaskService {
 
         List<LearningTaskCandidate> saved = candidateRepository.saveAll(newCandidates);
         return saved.stream().map(LearningTaskCandidateResponseDto::from).toList();
-    }
-
-    /** Generates candidates with the actual weekly windows and rejects plans that cannot fit by the deadline. */
-    @Transactional
-    public List<LearningTaskCandidateResponseDto> generateTasksForAvailability(
-            Long memberId, Long goalId, List<Availability> availabilities
-    ) {
-        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
-        int totalMinutes = totalAvailabilityMinutes(goal, availabilities);
-        int largestWindowMinutes = availabilities.stream().filter(Availability::isEnabled)
-                .mapToInt(Availability::getAvailableMinutes).max().orElse(0);
-        if (totalMinutes <= 0 || largestWindowMinutes <= 0) {
-            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
-        }
-        String constraint = "Total until deadline: %d minutes; maximum single task: %d minutes; windows: %s"
-                .formatted(totalMinutes, largestWindowMinutes, summarizeAvailability(availabilities));
-        List<AiGeneratedTaskDto> aiResults;
-        try {
-            aiResults = learningTaskAiService.generateTasks(goal, constraint);
-        } catch (CustomException exception) {
-            if (exception.getErrorCode() != LearningTaskErrorCode.AI_GENERATION_FAILED) throw exception;
-            log.warn("AI task generation failed; using availability-safe fallback tasks. goalId={}", goalId);
-            aiResults = fallbackTasks(goal, totalMinutes, largestWindowMinutes);
-        }
-        int generatedMinutes = aiResults.stream().mapToInt(AiGeneratedTaskDto::allocatedMinutes).sum();
-        if (generatedMinutes > totalMinutes || aiResults.stream()
-                .anyMatch(task -> task.allocatedMinutes() > largestWindowMinutes)) {
-            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
-        }
-        candidateRepository.deleteByGoalId(goalId);
-        List<LearningTaskCandidate> candidates = aiResults.stream().map(result -> LearningTaskCandidate.builder()
-                .goalId(goalId).memberId(memberId).title(result.title()).category(result.category())
-                .subject(result.subject()).difficulty(result.difficulty()).allocatedMinutes(result.allocatedMinutes())
-                .source(LearningTaskSource.AI_GENERATED).modified(false).build()).toList();
-        return candidateRepository.saveAll(candidates).stream().map(LearningTaskCandidateResponseDto::from).toList();
     }
 
     private int totalAvailabilityMinutes(MemberGoal goal, List<Availability> availabilities) {
@@ -128,24 +107,18 @@ public class LearningTaskService {
                 .collect(java.util.stream.Collectors.joining(", "));
     }
 
-    /** Keeps the user moving when the external AI provider is unavailable. */
-    private List<AiGeneratedTaskDto> fallbackTasks(MemberGoal goal, int totalMinutes, int largestWindowMinutes) {
-        int taskMinutes = Math.min(Math.min(60, largestWindowMinutes), totalMinutes);
-        int count = Math.max(1, Math.min(4, totalMinutes / taskMinutes));
-        List<String> steps = List.of("핵심 개념 정리", "기본 예제 학습", "실습 및 적용", "복습과 체크");
-        return java.util.stream.IntStream.range(0, count)
-                .mapToObj(index -> new AiGeneratedTaskDto(
-                        goal.getTitle() + " · " + steps.get(index),
-                        goal.getMustStudyTopics().getFirst(), goal.getTitle(), Math.min(3 + index / 2, 5), taskMinutes))
-                .toList();
-    }
-
     @Transactional(readOnly = true)
     public List<LearningTaskCandidateResponseDto> getCandidates(Long memberId, Long goalId) {
         getOwnedGoal(memberId, goalId);
         return candidateRepository.findByGoalIdOrderByIdAsc(goalId).stream()
                 .map(LearningTaskCandidateResponseDto::from)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CandidateAvailabilityStatusResponseDto getCandidateAvailabilityStatus(Long memberId, Long goalId) {
+        MemberGoal goal = getOwnedGoal(memberId, goalId);
+        return candidateAvailabilityStatus(goal, goalId);
     }
 
     /**
@@ -165,11 +138,11 @@ public class LearningTaskService {
     @Transactional
     public LearningTaskCandidateResponseDto addUserCandidate(Long memberId, Long goalId,
                                                                LearningTaskCandidateRequestDto request) {
-        getOwnedGoalForUpdate(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
+        assertTaskGenerationAllowed(goal);
 
         LearningTaskCandidate candidate = LearningTaskCandidate.builder()
                 .goalId(goalId)
-                .memberId(memberId)
                 .title(request.title())
                 .category(request.category())
                 .subject(request.subject())
@@ -197,32 +170,36 @@ public class LearningTaskService {
         candidateRepository.delete(candidate);
     }
 
-    /** Deletes a confirmed task but preserves its booked calendar slots as empty reservations. */
+    /** Deletes an unfinished confirmed task and its unfinished schedule placements. */
     @Transactional
     public void deleteConfirmedTask(Long memberId, Long taskId) {
         LearningTask task = learningTaskRepository.findById(taskId)
-                .orElseThrow(() -> new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND));
+                .orElseThrow(() -> new CustomException(LearningTaskErrorCode.CONFIRMED_TASK_NOT_FOUND));
         getOwnedGoalForUpdate(memberId, task.getGoalId());
         List<ScheduleItem> scheduledItems = scheduleItemRepository.findByLearningTaskIdForUpdate(taskId);
-        scheduledItems.forEach(item -> {
-            if (item.getStatus() == com.steadyteller.backend.schedule.entity.ScheduleItemStatus.PENDING) {
-                item.clearTask();
-            }
-        });
+        if (task.getStatus() == LearningTaskStatus.FINISHED
+                || scheduledItems.stream().anyMatch(item -> item.getStatus() == ScheduleItemStatus.FINISHED)) {
+            throw new CustomException(LearningTaskErrorCode.COMPLETED_TASK_CANNOT_BE_DELETED);
+        }
         scheduleFailureRepository.deleteByLearningTaskId(taskId);
+        scheduleItemRepository.deleteAll(scheduledItems);
         learningTaskRepository.delete(task);
     }
 
     /**
-     * 최종 승인. 이 시점의 후보 목록을 LearningTask로 일괄 저장한다 (status=PENDING, reviewedAt=저장 시각).
+     * 최종 승인. 이 시점의 후보 목록을 LearningTask로 일괄 저장한다 (status=PENDING).
      */
     @Transactional
     public List<LearningTaskResponseDto> confirmTasks(Long memberId, Long goalId) {
-        getOwnedGoalForUpdate(memberId, goalId);
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
+        assertTaskGenerationAllowed(goal);
 
         List<LearningTaskCandidate> candidates = candidateRepository.findByGoalIdOrderByIdAsc(goalId);
         if (candidates.isEmpty()) {
             throw new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND);
+        }
+        if (!candidateAvailabilityStatus(goal, goalId).isWithinAvailability()) {
+            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
         }
         List<LearningTask> tasks = candidates.stream()
                 .map(candidate -> LearningTask.builder()
@@ -230,7 +207,6 @@ public class LearningTaskService {
                         .title(candidate.getTitle())
                         .category(candidate.getCategory())
                         .subject(candidate.getSubject())
-                        .importance(candidate.getImportance())
                         .difficulty(candidate.getDifficulty())
                         .allocatedMinutes(candidate.getAllocatedMinutes())
                         .source(candidate.getSource())
@@ -238,26 +214,9 @@ public class LearningTaskService {
                         .build())
                 .toList();
 
-        List<LearningTask> existingTasks = learningTaskRepository.findByGoalIdAndStatusIn(
-                goalId, List.of(LearningTaskStatus.PENDING, LearningTaskStatus.SCHEDULED));
-        
-        // 스케줄에 이미 배정된(SCHEDULED) 태스크가 삭제될 경우 고아 참조를 방지하기 위해 빈 일정으로 처리한다.
-        for (LearningTask task : existingTasks) {
-            if (task.getStatus() == LearningTaskStatus.SCHEDULED) {
-                List<ScheduleItem> scheduledItems = scheduleItemRepository.findByLearningTaskIdForUpdate(task.getId());
-                scheduledItems.forEach(item -> {
-                    if (item.getStatus() == com.steadyteller.backend.schedule.entity.ScheduleItemStatus.PENDING) {
-                        item.clearTask();
-                    }
-                });
-            }
-        }
-        
-        java.util.List<Long> taskIds = existingTasks.stream().map(com.steadyteller.backend.learningtask.entity.LearningTask::getId).toList();
-        scheduleFailureRepository.deleteByLearningTaskIdIn(taskIds);
-        learningTaskRepository.deleteAll(existingTasks);
         List<LearningTask> saved = learningTaskRepository.saveAll(tasks);
         candidateRepository.deleteByGoalId(goalId);
+        goal.lockTaskGeneration();
 
         return saved.stream().map(LearningTaskResponseDto::from).toList();
     }
@@ -269,6 +228,21 @@ public class LearningTaskService {
             throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
         }
         return goal;
+    }
+
+    private CandidateAvailabilityStatusResponseDto candidateAvailabilityStatus(MemberGoal goal, Long goalId) {
+        int totalAvailableMinutes = totalAvailabilityMinutes(goal,
+                availabilityRepository.findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId));
+        int candidateMinutes = candidateRepository.findByGoalIdOrderByIdAsc(goalId).stream()
+                .mapToInt(LearningTaskCandidate::getAllocatedMinutes).sum();
+        return new CandidateAvailabilityStatusResponseDto(candidateMinutes, totalAvailableMinutes,
+                totalAvailableMinutes > 0 && candidateMinutes <= totalAvailableMinutes);
+    }
+
+    private void assertTaskGenerationAllowed(MemberGoal goal) {
+        if (goal.isTaskGenerationLocked()) {
+            throw new CustomException(LearningTaskErrorCode.TASK_GENERATION_LOCKED);
+        }
     }
 
     /**
@@ -287,9 +261,7 @@ public class LearningTaskService {
     private LearningTaskCandidate getOwnedCandidate(Long memberId, Long candidateId) {
         LearningTaskCandidate candidate = candidateRepository.findById(candidateId)
                 .orElseThrow(() -> new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND));
-        if (!candidate.getMemberId().equals(memberId)) {
-            throw new CustomException(LearningTaskErrorCode.CANDIDATE_ACCESS_DENIED);
-        }
+        getOwnedGoal(memberId, candidate.getGoalId());
         return candidate;
     }
 }
