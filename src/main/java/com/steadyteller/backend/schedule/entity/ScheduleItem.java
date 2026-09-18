@@ -135,6 +135,12 @@ public class ScheduleItem extends BaseTimeEntity {
         this.status = ScheduleItemStatus.PENDING;
     }
 
+    public void turnIntoSupplement() {
+        clearTask();
+        this.kind = ScheduleItemKind.SUPPLEMENT;
+        this.title = "보충 시간";
+    }
+
     public void fail() { this.status = ScheduleItemStatus.FAILED; }
 
     /**

@@ -112,6 +112,67 @@ class ScheduleAllocatorTest {
                 .isEqualTo(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
     }
 
+    @Test
+    void returnsEmptyListWhenTasksAreEmpty() {
+        List<AllocatedItem> result = allocator.allocate(
+                List.of(),
+                LocalDate.of(2026, 8, 24),
+                Set.of(DayOfWeek.MONDAY),
+                60,
+                365
+        );
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void placesOneTaskPerDayWhenCapacityIsZeroOrNegative() {
+        LearningTask task1 = task("A", 30);
+        LearningTask task2 = task("B", 30);
+
+        List<AllocatedItem> result = allocator.allocate(
+                List.of(task1, task2),
+                LocalDate.of(2026, 8, 24), // MON
+                Set.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY),
+                0,
+                365
+        );
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).date()).isEqualTo(LocalDate.of(2026, 8, 24));
+        assertThat(result.get(1).date()).isEqualTo(LocalDate.of(2026, 8, 25));
+    }
+
+    @Test
+    void throwsWhenAvailableDaysIsEmpty() {
+        LearningTask task1 = task("A", 30);
+
+        assertThatThrownBy(() -> allocator.allocate(
+                List.of(task1),
+                LocalDate.of(2026, 8, 24),
+                Set.of(),
+                60,
+                30
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
+    }
+
+    @Test
+    void throwsWhenSupplementEveryRegularDaysIsZeroOrNegative() {
+        LearningTask task1 = task("A", 30);
+
+        assertThatThrownBy(() -> allocator.allocateWithSupplementDays(
+                List.of(task1),
+                LocalDate.of(2026, 8, 24),
+                Set.of(DayOfWeek.MONDAY),
+                60,
+                0,
+                30
+        ))
+                .isInstanceOf(IllegalArgumentException.class); // Or whatever we expect, wait, if it's not handled, it'll hit the SCHEDULE_GENERATION_FAILED!
+    }
+
     private LearningTask task(String title, int allocatedMinutes) {
         return LearningTask.builder()
                 .goalId(1L)

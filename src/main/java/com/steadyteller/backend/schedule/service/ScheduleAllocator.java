@@ -57,6 +57,23 @@ public class ScheduleAllocator {
             List<LearningTask> orderedTasks, LocalDate earliestStart, Set<DayOfWeek> availableDays,
             int dailyCapacityMinutes, int supplementEveryRegularDays, int maxHorizonDays
     ) {
+        return allocateWithSupplementDays(orderedTasks, earliestStart, availableDays,
+                dailyCapacityMinutes, supplementEveryRegularDays, maxHorizonDays, Set.of());
+    }
+
+    /**
+     * blockedDates에 있는 날짜는 같은 회원의 다른 목표가 이미 쓰고 있는 날이라, 이 목표는
+     * 그 날짜를 아예 가용하지 않은 요일처럼 건너뛴다. 하루를 쪼개 두 목표가 나눠 쓰게 하지 않고
+     * 날짜 단위로 깔끔히 비켜가는 쪽을 택했다 — 부분 분 단위 겹침 계산은 시간대 배정(insertBreaksAndAssignTimeRanges)과
+     * 별도로 다시 검증해야 해서 버그 위험이 커진다.
+     */
+    public AllocationPlan allocateWithSupplementDays(
+            List<LearningTask> orderedTasks, LocalDate earliestStart, Set<DayOfWeek> availableDays,
+            int dailyCapacityMinutes, int supplementEveryRegularDays, int maxHorizonDays, Set<LocalDate> blockedDates
+    ) {
+        if (supplementEveryRegularDays <= 0) {
+            throw new IllegalArgumentException("supplementEveryRegularDays must be positive");
+        }
         List<AllocatedItem> result = new ArrayList<>();
         List<LocalDate> supplementDates = new ArrayList<>();
         Iterator<LearningTask> iterator = orderedTasks.iterator();
@@ -67,9 +84,12 @@ public class ScheduleAllocator {
 
         while (pending != null) {
             if (daysWalked > maxHorizonDays) {
+                if (blockedDates != null && !blockedDates.isEmpty()) {
+                    throw new CustomException(ScheduleErrorCode.ALL_AVAILABLE_DAYS_BLOCKED);
+                }
                 throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
             }
-            if (!availableDays.contains(cursor.getDayOfWeek())) {
+            if (!availableDays.contains(cursor.getDayOfWeek()) || blockedDates.contains(cursor)) {
                 cursor = cursor.plusDays(1); daysWalked++; continue;
             }
             if (regularDaysSinceSupplement == supplementEveryRegularDays) {
@@ -95,7 +115,7 @@ public class ScheduleAllocator {
         }
         // The final whole-day slot protects the last regular day too, rather than leaving it without recovery time.
         while (regularDaysSinceSupplement > 0 && daysWalked <= maxHorizonDays) {
-            if (availableDays.contains(cursor.getDayOfWeek())) {
+            if (availableDays.contains(cursor.getDayOfWeek()) && !blockedDates.contains(cursor)) {
                 supplementDates.add(cursor);
                 break;
             }

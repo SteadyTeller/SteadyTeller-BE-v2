@@ -85,7 +85,7 @@ class ScheduleServiceTest {
                 new ScheduleAllocator.AllocatedItem(task2, date2, 45, 1)
         );
 
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(List.of(goal));
         given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(task1, task2));
         given(scheduleAiService.generateSchedule(any(), any(), any(), any(), any(Integer.class), any(Integer.class)))
@@ -115,7 +115,7 @@ class ScheduleServiceTest {
 
     @Test
     void throwsWhenGoalNotFound() {
-        given(memberGoalRepository.findByIdForUpdate(10L)).willReturn(Optional.empty());
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of());
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(1L, 10L))
                 .isInstanceOf(CustomException.class)
@@ -127,7 +127,7 @@ class ScheduleServiceTest {
     @Test
     void throwsWhenGoalNotOwnedByMember() {
         MemberGoal goal = goal(2L, List.of("MON"));
-        given(memberGoalRepository.findByIdForUpdate(10L)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(goal));
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(1L, 10L))
                 .isInstanceOf(CustomException.class)
@@ -140,7 +140,7 @@ class ScheduleServiceTest {
         Long memberId = 1L;
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON"));
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(goal));
         given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of());
 
@@ -157,7 +157,7 @@ class ScheduleServiceTest {
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON"));
         LearningTask invalidTask = task(1L, "잘못된 태스크", 0);
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(goal));
         given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(invalidTask));
 
@@ -174,7 +174,7 @@ class ScheduleServiceTest {
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON"));
         LearningTask invalidTask = task(1L, "너무 긴 태스크", 1441);
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(goal));
         given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(invalidTask));
 
@@ -195,7 +195,7 @@ class ScheduleServiceTest {
                 .memberId(memberId).title("목표").startDate(LocalDate.now()).targetDate(LocalDate.now().plusMonths(1))
                 .currentLevel("초급").dailyStudyHours(null).availableDays(List.of("MON")).focusArea("DB").build();
         ReflectionTestUtils.setField(nullHoursGoal, "id", goalId);
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(nullHoursGoal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(nullHoursGoal));
         given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(task1));
 
@@ -209,7 +209,7 @@ class ScheduleServiceTest {
                 .memberId(memberId).title("목표").startDate(LocalDate.now()).targetDate(LocalDate.now().plusMonths(1))
                 .currentLevel("초급").dailyStudyHours(0).availableDays(List.of("MON")).focusArea("DB").build();
         ReflectionTestUtils.setField(zeroHoursGoal, "id", goalId);
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(zeroHoursGoal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(zeroHoursGoal));
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
                 .isInstanceOf(CustomException.class)
@@ -221,7 +221,7 @@ class ScheduleServiceTest {
                 .memberId(memberId).title("목표").startDate(LocalDate.now()).targetDate(LocalDate.now().plusMonths(1))
                 .currentLevel("초급").dailyStudyHours(-2).availableDays(List.of("MON")).focusArea("DB").build();
         ReflectionTestUtils.setField(negativeHoursGoal, "id", goalId);
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(negativeHoursGoal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(negativeHoursGoal));
 
         assertThatThrownBy(() -> scheduleService.generateSchedule(memberId, goalId))
                 .isInstanceOf(CustomException.class)
@@ -235,7 +235,7 @@ class ScheduleServiceTest {
         Long goalId = 10L;
         MemberGoal goal = goal(memberId, List.of("MON", "HOLIDAY"));
         LearningTask task1 = task(1L, "정규화 기초", 30);
-        given(memberGoalRepository.findByIdForUpdate(goalId)).willReturn(Optional.of(goal));
+        given(memberGoalRepository.findByMemberIdForUpdate(1L)).willReturn(java.util.List.of(goal));
         given(learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING))
                 .willReturn(List.of(task1));
 
@@ -438,6 +438,26 @@ class ScheduleServiceTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(ScheduleErrorCode.SCHEDULE_ITEM_CAPACITY_EXCEEDED);
+    }
+
+    @Test
+    void updateScheduleItemThrowsWhenMinutesExceedMaxAllocatedMinutes() {
+        Long memberId = 1L;
+        MemberGoal goal = goal(memberId, List.of("MON"));
+        Schedule schedule = schedule(100L, memberId, 10L);
+        LocalDate monday = LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY));
+        ScheduleItem first = scheduleItem(1001L, schedule, 1L, "정규화 기초", monday, DayOfWeek.MONDAY, 30, 1);
+        given(memberGoalRepository.findById(10L)).willReturn(Optional.of(goal));
+        given(scheduleRepository.findById(100L)).willReturn(Optional.of(schedule));
+        given(scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(100L))
+                .willReturn(List.of(first));
+
+        assertThatThrownBy(() -> scheduleService.updateScheduleItem(
+                memberId, 100L, 1001L, new ScheduleItemUpdateRequestDto(monday, ScheduleService.MAX_ALLOCATED_MINUTES + 1)
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting("errorCode")
+                .isEqualTo(ScheduleErrorCode.INVALID_SCHEDULE_ITEM_MINUTES);
     }
 
     @Test

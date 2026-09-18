@@ -208,7 +208,8 @@ class MemberGoalScheduleConcurrencyTest {
             try {
                 startLatch.await();
                 learningTaskService.confirmTasks(memberId, goalId);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         });
 

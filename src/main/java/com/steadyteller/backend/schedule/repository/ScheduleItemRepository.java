@@ -2,6 +2,7 @@ package com.steadyteller.backend.schedule.repository;
 
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -30,4 +31,14 @@ public interface ScheduleItemRepository extends JpaRepository<ScheduleItem, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT si FROM ScheduleItem si WHERE si.learningTaskId = :learningTaskId")
     List<ScheduleItem> findByLearningTaskIdForUpdate(@Param("learningTaskId") Long learningTaskId);
+
+    // 같은 회원의 다른 목표가 이미 점유한 날짜를 조회한다. 동시에 여러 목표를 진행할 때
+    // 스케줄 생성/재조정이 서로 다른 목표의 시간대를 겹쳐서 배정하지 않도록 막는 용도다.
+    @Query("""
+            SELECT DISTINCT si.date FROM ScheduleItem si
+            WHERE si.schedule.memberId = :memberId AND si.schedule.goalId <> :excludeGoalId
+              AND si.date >= :fromDate
+            """)
+    List<LocalDate> findOccupiedDatesByMemberExcludingGoal(@Param("memberId") Long memberId,
+            @Param("excludeGoalId") Long excludeGoalId, @Param("fromDate") LocalDate fromDate);
 }
