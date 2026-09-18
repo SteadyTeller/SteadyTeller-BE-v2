@@ -37,7 +37,6 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -48,7 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor(onConstructor_ = @Autowired)
+@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ScheduleService {
 
@@ -63,20 +62,7 @@ public class ScheduleService {
     private final ScheduleFailureRepository scheduleFailureRepository;
     private final ScheduleAiService scheduleAiService;
 
-    @Autowired(required = false)
-    private AvailabilityRepository availabilityRepository;
-
-    /** Kept for source compatibility with callers built before failure history was introduced. */
-    public ScheduleService(MemberGoalRepository memberGoalRepository, LearningTaskRepository learningTaskRepository,
-                           ScheduleRepository scheduleRepository, ScheduleItemRepository scheduleItemRepository,
-                           ScheduleAiService scheduleAiService) {
-        this.memberGoalRepository = memberGoalRepository;
-        this.learningTaskRepository = learningTaskRepository;
-        this.scheduleRepository = scheduleRepository;
-        this.scheduleItemRepository = scheduleItemRepository;
-        this.scheduleFailureRepository = null;
-        this.scheduleAiService = scheduleAiService;
-    }
+    private final AvailabilityRepository availabilityRepository;
 
     @Transactional
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
@@ -100,11 +86,10 @@ public class ScheduleService {
         log.info("Schedule allocation completed: goalId={}, taskCount={}, allocationCount={}, dailyCapacityMinutes={}",
                 goalId, confirmedTasks.size(), allocations.size(), dailyCapacityMinutes);
 
-        ScheduleAllocator.AllocationPlan plan = scheduleFailureRepository == null ? null
-                : new ScheduleAllocator().allocateWithSupplementDays(allocations.stream()
-                        .map(ScheduleAllocator.AllocatedItem::task).toList(), earliestStart, availableDays,
-                        dailyCapacityMinutes, supplementEveryRegularDays(dailyCapacityMinutes), MAX_HORIZON_DAYS);
-        List<ScheduleAllocator.AllocatedItem> plannedAllocations = plan == null ? allocations : plan.regularItems();
+        ScheduleAllocator.AllocationPlan plan = new ScheduleAllocator().allocateWithSupplementDays(allocations.stream()
+                .map(ScheduleAllocator.AllocatedItem::task).toList(), earliestStart, availableDays,
+                dailyCapacityMinutes, supplementEveryRegularDays(dailyCapacityMinutes), MAX_HORIZON_DAYS);
+        List<ScheduleAllocator.AllocatedItem> plannedAllocations = plan.regularItems();
         Schedule schedule = scheduleRepository.save(Schedule.create(
                 memberId,
                 goalId,
@@ -112,13 +97,8 @@ public class ScheduleService {
                 plannedAllocations.getLast().date()
         ));
 
-        // The compatibility constructor is retained for pre-failure-history callers/tests only.
-        List<ScheduleItem> items = scheduleFailureRepository == null
-                ? createRegularItems(schedule, allocations)
-                : createItemsWithSupplementDays(schedule, plan, dailyCapacityMinutes);
-        if (scheduleFailureRepository != null) {
-            insertBreaksAndAssignTimeRanges(memberId, schedule.getGoalId(), items, goal.getBreakMinutes());
-        }
+        List<ScheduleItem> items = createItemsWithSupplementDays(schedule, plan, dailyCapacityMinutes);
+        insertBreaksAndAssignTimeRanges(memberId, schedule.getGoalId(), items, goal.getBreakMinutes());
         scheduleItemRepository.saveAll(items);
         schedule.updatePeriod(schedule.getStartDate(), items.stream().map(ScheduleItem::getDate)
                 .max(LocalDate::compareTo).orElse(schedule.getEndDate()));
@@ -520,65 +500,26 @@ public class ScheduleService {
         return goal.getStartDate().isAfter(today) ? goal.getStartDate() : today;
     }
 
-    private Set<DayOfWeek> parseAvailableDays(List<String> availableDays) {
-        if (availableDays == null || availableDays.isEmpty()) {
-            throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
-        }
-        Set<DayOfWeek> parsed = new LinkedHashSet<>();
-        for (String raw : availableDays) {
-            parsed.add(toDayOfWeek(raw));
-        }
-        return parsed;
-    }
-
-    private DayOfWeek toDayOfWeek(String raw) {
-        if (raw == null) {
-            throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
-        }
-        return switch (raw.trim().toUpperCase()) {
-            case "MON" -> DayOfWeek.MONDAY;
-            case "TUE" -> DayOfWeek.TUESDAY;
-            case "WED" -> DayOfWeek.WEDNESDAY;
-            case "THU" -> DayOfWeek.THURSDAY;
-            case "FRI" -> DayOfWeek.FRIDAY;
-            case "SAT" -> DayOfWeek.SATURDAY;
-            case "SUN" -> DayOfWeek.SUNDAY;
-            default -> throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
-        };
-    }
-
-    /**
-     * Time windows are the source of truth for the new planner. The allocator has
-     * one daily capacity, therefore it uses the smallest enabled weekday capacity
-     * to guarantee that no selected weekday is overbooked. Legacy goals without
-     * windows retain their dailyStudyHours behavior.
-     */
+    /** Time windows are the sole availability source for the planner. */
     private int calculateDailyCapacityMinutes(Long memberId, MemberGoal goal, Set<DayOfWeek> availableDays) {
-        if (availabilityRepository != null) {
-            java.util.Map<DayOfWeek, Integer> minutesByDay = availabilityRepository
-                    .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.getId()).stream()
-                    .filter(Availability::isEnabled)
-                    .collect(Collectors.groupingBy(Availability::getDayOfWeek,
-                            Collectors.summingInt(Availability::getAvailableMinutes)));
-            int windowCapacity = availableDays.stream().map(minutesByDay::get)
-                    .filter(java.util.Objects::nonNull).min(Integer::compareTo).orElse(0);
-            if (windowCapacity > 0) return windowCapacity;
-        }
-        if (goal.getDailyStudyHours() == null || goal.getDailyStudyHours() <= 0) {
-            throw new CustomException(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
-        }
-        return goal.getDailyStudyHours() * 60;
+        java.util.Map<DayOfWeek, Integer> minutesByDay = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.getId()).stream()
+                .filter(Availability::isEnabled)
+                .collect(Collectors.groupingBy(Availability::getDayOfWeek,
+                        Collectors.summingInt(Availability::getAvailableMinutes)));
+        int windowCapacity = availableDays.stream().map(minutesByDay::get)
+                .filter(java.util.Objects::nonNull).min(Integer::compareTo).orElse(0);
+        if (windowCapacity > 0) return windowCapacity;
+        throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
     }
 
     private Set<DayOfWeek> resolveAvailableDays(Long memberId, MemberGoal goal) {
-        if (availabilityRepository != null) {
-            Set<DayOfWeek> daysWithWindows = availabilityRepository
-                    .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.getId()).stream()
-                    .filter(Availability::isEnabled).map(Availability::getDayOfWeek)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-            if (!daysWithWindows.isEmpty()) return daysWithWindows;
-        }
-        return parseAvailableDays(goal.getAvailableDays());
+        Set<DayOfWeek> daysWithWindows = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.getId()).stream()
+                .filter(Availability::isEnabled).map(Availability::getDayOfWeek)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!daysWithWindows.isEmpty()) return daysWithWindows;
+        throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
     }
 
     private void recalculateTimeRangesForDate(Long goalId, java.time.LocalDate date, List<ScheduleItem> allItems) {

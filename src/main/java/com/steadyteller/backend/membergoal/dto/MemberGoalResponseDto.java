@@ -12,10 +12,9 @@ public record MemberGoalResponseDto(
         LocalDate startDate,
         LocalDate targetDate,
         String currentLevel,
-        Integer dailyStudyHours,
         Integer breakMinutes,
-        List<String> availableDays,
-        String focusArea,
+        List<String> mustStudyTopics,
+        com.steadyteller.backend.membergoal.entity.GoalStatus status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -27,10 +26,9 @@ public record MemberGoalResponseDto(
                 goal.getStartDate(),
                 goal.getTargetDate(),
                 goal.getCurrentLevel(),
-                goal.getDailyStudyHours(),
                 goal.getBreakMinutes(),
-                goal.getAvailableDays(),
-                goal.getFocusArea(),
+                goal.getMustStudyTopics(),
+                goal.getStatus(),
                 goal.getCreatedAt(),
                 goal.getUpdatedAt()
         );

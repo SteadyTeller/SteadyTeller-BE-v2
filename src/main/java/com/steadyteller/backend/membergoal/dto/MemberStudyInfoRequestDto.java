@@ -3,7 +3,7 @@ package com.steadyteller.backend.membergoal.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -25,21 +25,9 @@ public record MemberStudyInfoRequestDto(
         @NotBlank
         String currentLevel,
 
-        @NotNull
-        @Positive
-        Integer dailyStudyHours,
-
         @NotEmpty
-        List<String> availableDays,
-
-        @NotBlank
-        String focusArea,
+        List<@NotBlank @Size(max = 200) String> mustStudyTopics,
 
         @jakarta.validation.constraints.PositiveOrZero
         Integer breakMinutes
-) {
-    public MemberStudyInfoRequestDto(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
-                                     Integer dailyStudyHours, List<String> availableDays, String focusArea) {
-        this(title, startDate, targetDate, currentLevel, dailyStudyHours, availableDays, focusArea, null);
-    }
-}
+) { }

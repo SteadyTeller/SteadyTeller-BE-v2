@@ -8,21 +8,18 @@ import org.springframework.http.HttpStatus;
 @Getter
 @AllArgsConstructor
 public enum ScheduleErrorCode implements ErrorCode {
-
-    NO_CONFIRMED_TASKS(HttpStatus.BAD_REQUEST, "S001", "스케줄을 생성할 확정된 학습 태스크가 없습니다."),
-    INVALID_AVAILABLE_DAYS(HttpStatus.BAD_REQUEST, "S002", "가용 요일 값이 올바르지 않습니다."),
-    SCHEDULE_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "S003", "스케줄 생성에 실패했습니다."),
-    INVALID_LEARNING_TASK_DURATION(HttpStatus.BAD_REQUEST, "S004", "예상 소요 시간이 올바르지 않은 학습 태스크가 있습니다."),
-    SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "S005", "존재하지 않는 스케줄입니다."),
-    SCHEDULE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "S006", "해당 스케줄에 대한 권한이 없습니다."),
-    SCHEDULE_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "S007", "존재하지 않는 스케줄 항목입니다."),
-    INVALID_SCHEDULE_ITEM_MINUTES(HttpStatus.BAD_REQUEST, "S008", "배정 시간은 0보다 커야 합니다."),
-    SCHEDULE_ITEM_DATE_IN_PAST(HttpStatus.BAD_REQUEST, "S009", "지난 날짜로는 재배치할 수 없습니다."),
-    SCHEDULE_ITEM_DATE_NOT_AVAILABLE(HttpStatus.BAD_REQUEST, "S010", "선택한 날짜는 목표의 가용 요일이 아닙니다."),
-    SCHEDULE_ITEM_CAPACITY_EXCEEDED(HttpStatus.BAD_REQUEST, "S011", "선택한 날짜의 배정 시간 합이 하루 학습 가능 시간을 초과합니다."),
-    INVALID_DAILY_STUDY_HOURS(HttpStatus.BAD_REQUEST, "S012", "일일 학습 시간은 1시간 이상이어야 합니다."),
-    SCHEDULE_ITEM_ALREADY_FINISHED(HttpStatus.BAD_REQUEST, "S013", "이미 완료된 스케줄 항목은 재배치할 수 없습니다."),
-    ALL_AVAILABLE_DAYS_BLOCKED(HttpStatus.BAD_REQUEST, "S014", "다른 목표의 일정과 가용 시간이 겹쳐 스케줄을 생성할 수 없습니다.");
+    NO_CONFIRMED_TASKS(HttpStatus.BAD_REQUEST, "S001", "No confirmed learning tasks exist."),
+    INVALID_AVAILABLE_DAYS(HttpStatus.BAD_REQUEST, "S002", "No enabled availability exists for this goal."),
+    SCHEDULE_GENERATION_FAILED(HttpStatus.BAD_REQUEST, "S003", "The schedule cannot be generated within the goal period."),
+    INVALID_LEARNING_TASK_DURATION(HttpStatus.BAD_REQUEST, "S004", "A learning task has an invalid duration."),
+    SCHEDULE_NOT_FOUND(HttpStatus.NOT_FOUND, "S005", "Schedule not found."),
+    SCHEDULE_ACCESS_DENIED(HttpStatus.FORBIDDEN, "S006", "Schedule access denied."),
+    SCHEDULE_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "S007", "Schedule item not found."),
+    INVALID_SCHEDULE_ITEM_MINUTES(HttpStatus.BAD_REQUEST, "S008", "Schedule item minutes are invalid."),
+    SCHEDULE_ITEM_DATE_IN_PAST(HttpStatus.BAD_REQUEST, "S009", "A past date cannot be selected."),
+    SCHEDULE_ITEM_DATE_NOT_AVAILABLE(HttpStatus.BAD_REQUEST, "S010", "The selected date is outside this goal's availability."),
+    SCHEDULE_ITEM_CAPACITY_EXCEEDED(HttpStatus.BAD_REQUEST, "S011", "The selected date exceeds available study time."),
+    SCHEDULE_ITEM_ALREADY_FINISHED(HttpStatus.BAD_REQUEST, "S013", "A completed schedule item cannot be moved.");
 
     private final HttpStatus status;
     private final String code;

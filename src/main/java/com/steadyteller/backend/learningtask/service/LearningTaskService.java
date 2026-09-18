@@ -136,7 +136,7 @@ public class LearningTaskService {
         return java.util.stream.IntStream.range(0, count)
                 .mapToObj(index -> new AiGeneratedTaskDto(
                         goal.getTitle() + " · " + steps.get(index),
-                        goal.getFocusArea(), goal.getTitle(), Math.min(3 + index / 2, 5), taskMinutes))
+                        goal.getMustStudyTopics().getFirst(), goal.getTitle(), Math.min(3 + index / 2, 5), taskMinutes))
                 .toList();
     }
 
@@ -156,7 +156,9 @@ public class LearningTaskService {
     public List<LearningTaskResponseDto> getConfirmedTasks(Long memberId, Long goalId) {
         getOwnedGoal(memberId, goalId);
         return learningTaskRepository.findByGoalIdOrderByIdAsc(goalId).stream()
-                .map(LearningTaskResponseDto::from)
+                .map(task -> LearningTaskResponseDto.from(task,
+                        scheduleItemRepository.findByLearningTaskIdOrderByDateAscOrderIndexAsc(task.getId()).stream()
+                                .map(com.steadyteller.backend.learningtask.dto.TaskSchedulePlacementResponseDto::from).toList()))
                 .toList();
     }
 

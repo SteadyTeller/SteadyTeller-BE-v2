@@ -51,18 +51,12 @@ public class MemberGoal extends BaseTimeEntity {
     private String currentLevel;
 
     @Column(nullable = false)
-    private Integer dailyStudyHours;
-
-    @Column(nullable = false)
     private Integer breakMinutes = 0;
 
     @ElementCollection
-    @CollectionTable(name = "member_goal_available_days", joinColumns = @JoinColumn(name = "member_goal_id"))
-    @Column(name = "day_of_week", nullable = false)
-    private List<String> availableDays = new ArrayList<>();
-
-    @Column(nullable = false)
-    private String focusArea;
+    @CollectionTable(name = "member_goal_must_study_topics", joinColumns = @JoinColumn(name = "member_goal_id"))
+    @Column(name = "topic", nullable = false)
+    private List<String> mustStudyTopics = new ArrayList<>();
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -70,28 +64,24 @@ public class MemberGoal extends BaseTimeEntity {
 
     @Builder
     public MemberGoal(Long memberId, String title, LocalDate startDate, LocalDate targetDate,
-                       String currentLevel, Integer dailyStudyHours, Integer breakMinutes, List<String> availableDays, String focusArea) {
+                       String currentLevel, Integer breakMinutes, List<String> mustStudyTopics) {
         this.memberId = memberId;
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
         this.currentLevel = currentLevel;
-        this.dailyStudyHours = dailyStudyHours;
         this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
-        this.availableDays = availableDays;
-        this.focusArea = focusArea;
+        this.mustStudyTopics = new ArrayList<>(mustStudyTopics);
     }
 
     public void update(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
-                        Integer dailyStudyHours, Integer breakMinutes, List<String> availableDays, String focusArea) {
+                        Integer breakMinutes, List<String> mustStudyTopics) {
         this.title = title;
         this.startDate = startDate;
         this.targetDate = targetDate;
         this.currentLevel = currentLevel;
-        this.dailyStudyHours = dailyStudyHours;
         this.breakMinutes = breakMinutes == null ? 0 : breakMinutes;
-        this.availableDays = availableDays;
-        this.focusArea = focusArea;
+        this.mustStudyTopics = new ArrayList<>(mustStudyTopics);
     }
 
     public boolean isOwnedBy(Long memberId) {

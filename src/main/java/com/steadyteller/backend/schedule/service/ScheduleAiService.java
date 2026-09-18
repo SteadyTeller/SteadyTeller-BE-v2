@@ -285,7 +285,7 @@ public class ScheduleAiService {
                 3. 공통 무결성 규칙:
                    - 모든 확정된 태스크 ID는 dailyPlans와 fallbackTaskOrder에 각각 정확히 1번씩만 포함되어야 합니다.
                    - 없는 ID를 지어내거나 기존 ID를 누락하지 마세요.
-                """.formatted(goal.getTitle(), targetPeriod, goal.getCurrentLevel(), goal.getFocusArea(),
+                """.formatted(goal.getTitle(), targetPeriod, goal.getCurrentLevel(), goal.getMustStudyTopics(),
                 dailyCapacityMinutes, slotLines, taskLines, dailyCapacityMinutes, dailyCapacityMinutes);
     }
 }

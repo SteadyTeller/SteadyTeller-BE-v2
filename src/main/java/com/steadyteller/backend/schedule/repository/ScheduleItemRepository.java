@@ -2,7 +2,6 @@ package com.steadyteller.backend.schedule.repository;
 
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import jakarta.persistence.LockModeType;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 public interface ScheduleItemRepository extends JpaRepository<ScheduleItem, Long> {
 
     List<ScheduleItem> findByScheduleIdOrderByDateAscOrderIndexAsc(Long scheduleId);
+
+    List<ScheduleItem> findByLearningTaskIdOrderByDateAscOrderIndexAsc(Long learningTaskId);
 
     // 완료 처리/취소는 순서 재배치가 필요 없어 updateScheduleItem처럼 전체 목록을 불러올 필요가 없으므로,
     // 스케줄 소속 여부까지 함께 검증하는 단건 조회로 처리한다.
@@ -34,11 +35,4 @@ public interface ScheduleItemRepository extends JpaRepository<ScheduleItem, Long
 
     // 같은 회원의 다른 목표가 이미 점유한 날짜를 조회한다. 동시에 여러 목표를 진행할 때
     // 스케줄 생성/재조정이 서로 다른 목표의 시간대를 겹쳐서 배정하지 않도록 막는 용도다.
-    @Query("""
-            SELECT DISTINCT si.date FROM ScheduleItem si
-            WHERE si.schedule.memberId = :memberId AND si.schedule.goalId <> :excludeGoalId
-              AND si.date >= :fromDate
-            """)
-    List<LocalDate> findOccupiedDatesByMemberExcludingGoal(@Param("memberId") Long memberId,
-            @Param("excludeGoalId") Long excludeGoalId, @Param("fromDate") LocalDate fromDate);
 }

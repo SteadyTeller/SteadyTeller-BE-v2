@@ -60,26 +60,6 @@ public class AvailabilityService {
         return AvailabilityResponse.from(availabilityRepository.save(availability));
     }
 
-    @org.springframework.transaction.annotation.Transactional
-    public java.util.List<com.steadyteller.backend.member.dto.AvailabilityResponse> createAvailabilities(Long memberId, Long memberGoalId, java.util.List<com.steadyteller.backend.member.dto.AvailabilityRequest> requests) {
-        com.steadyteller.backend.member.domain.Member member = memberService.getActiveMember(memberId);
-        verifyGoalOwnership(memberId, memberGoalId);
-        java.util.List<Availability> availabilities = new java.util.ArrayList<>();
-        for (com.steadyteller.backend.member.dto.AvailabilityRequest request : requests) {
-            validateTimeRange(request);
-            // Note: overlap check is skipped here for bulk insert performance, assumes caller (GoalPlanGenerationService) provides disjoint windows.
-            availabilities.add(Availability.create(
-                    member,
-                    memberGoalId,
-                    request.getDayOfWeek(),
-                    request.getStartTime(),
-                    request.getEndTime(),
-                    request.isEnabledOrDefault()
-            ));
-        }
-        return availabilityRepository.saveAll(availabilities).stream().map(com.steadyteller.backend.member.dto.AvailabilityResponse::from).toList();
-    }
-
     @Transactional
     public AvailabilityResponse updateAvailability(
             Long memberId,

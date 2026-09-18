@@ -11,162 +11,49 @@ import java.util.List;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
-/**
- * 확정된 순서(orderedTasks)를 기준으로 availableDays/dailyCapacityMinutes 제약을 지키며
- * 각 태스크를 실제 날짜에 결정론적으로 배정한다.
- *
- * =========================================================================================
- * [FUTURE EXTENSION: 방법 ③ 태스크 분할(Task Splitting / Chunking) 전환 가이드]
- * =========================================================================================
- * 향후 긴 태스크(예: 70분)를 일자별로 쪼개어(예: Day1에 60분, Day2에 10분) 배정하는
- * 완전 분할 모델로 전환할 경우 아래와 같이 구현할 수 있습니다.
- *
- * 1. DB/Entity 확장:
- *    - ScheduleItem에 chunkIndex(차수, 1, 2..), isLastChunk(boolean), totalEstimatedMinutes 추가
- *    - 또는 LearningTask에 remainingMinutes 개념 추가
- *
- * 2. 분할 배정 알고리즘 변경:
- *    while (pending != null) {
- *        int minutes = pendingRemainingMinutes;
- *        if (minutes <= remainingMinutes) {
- *            result.add(new AllocatedItem(pending, cursor, minutes, orderInDay++, isLastChunk=true));
- *            remainingMinutes -= minutes;
- *            pending = iterator.hasNext() ? iterator.next() : null;
- *        } else if (remainingMinutes > 0) {
- *            // 당일 잔여 시간만큼만 잘라서 배정하고 나머지는 다음 날로 이월
- *            result.add(new AllocatedItem(pending, cursor, remainingMinutes, orderInDay++, isLastChunk=false));
- *            pendingRemainingMinutes = minutes - remainingMinutes;
- *            break; // 당일 소진 후 익일로 이동
- *        } else {
- *            break;
- *        }
- *    }
- * =========================================================================================
- */
+/** Deterministically assigns one goal's tasks to that goal's available weekdays. */
 @Component
 public class ScheduleAllocator {
+    public record AllocatedItem(LearningTask task, LocalDate date, int allocatedMinutes, int orderInDay) { }
+    public record AllocationPlan(List<AllocatedItem> regularItems, List<LocalDate> supplementDates) { }
 
-    public record AllocatedItem(LearningTask task, LocalDate date, int allocatedMinutes, int orderInDay) {
-    }
-
-    /** Regular task placements plus whole available days intentionally reserved for catch-up. */
-    public record AllocationPlan(List<AllocatedItem> regularItems, List<LocalDate> supplementDates) {
-    }
-
-    public AllocationPlan allocateWithSupplementDays(
-            List<LearningTask> orderedTasks, LocalDate earliestStart, Set<DayOfWeek> availableDays,
-            int dailyCapacityMinutes, int supplementEveryRegularDays, int maxHorizonDays
-    ) {
-        return allocateWithSupplementDays(orderedTasks, earliestStart, availableDays,
-                dailyCapacityMinutes, supplementEveryRegularDays, maxHorizonDays, Set.of());
-    }
-
-    /**
-     * blockedDates에 있는 날짜는 같은 회원의 다른 목표가 이미 쓰고 있는 날이라, 이 목표는
-     * 그 날짜를 아예 가용하지 않은 요일처럼 건너뛴다. 하루를 쪼개 두 목표가 나눠 쓰게 하지 않고
-     * 날짜 단위로 깔끔히 비켜가는 쪽을 택했다 — 부분 분 단위 겹침 계산은 시간대 배정(insertBreaksAndAssignTimeRanges)과
-     * 별도로 다시 검증해야 해서 버그 위험이 커진다.
-     */
-    public AllocationPlan allocateWithSupplementDays(
-            List<LearningTask> orderedTasks, LocalDate earliestStart, Set<DayOfWeek> availableDays,
-            int dailyCapacityMinutes, int supplementEveryRegularDays, int maxHorizonDays, Set<LocalDate> blockedDates
-    ) {
-        if (supplementEveryRegularDays <= 0) {
-            throw new IllegalArgumentException("supplementEveryRegularDays must be positive");
-        }
-        List<AllocatedItem> result = new ArrayList<>();
-        List<LocalDate> supplementDates = new ArrayList<>();
-        Iterator<LearningTask> iterator = orderedTasks.iterator();
+    public AllocationPlan allocateWithSupplementDays(List<LearningTask> tasks, LocalDate start,
+            Set<DayOfWeek> availableDays, int capacity, int supplementEvery, int maxDays) {
+        if (supplementEvery <= 0) throw new IllegalArgumentException("supplementEvery must be positive");
+        List<AllocatedItem> regular = new ArrayList<>();
+        List<LocalDate> supplements = new ArrayList<>();
+        Iterator<LearningTask> iterator = tasks.iterator();
         LearningTask pending = iterator.hasNext() ? iterator.next() : null;
-        LocalDate cursor = earliestStart;
-        int daysWalked = 0;
-        int regularDaysSinceSupplement = 0;
-
+        LocalDate date = start;
+        int walked = 0;
+        int regularDays = 0;
         while (pending != null) {
-            if (daysWalked > maxHorizonDays) {
-                if (blockedDates != null && !blockedDates.isEmpty()) {
-                    throw new CustomException(ScheduleErrorCode.ALL_AVAILABLE_DAYS_BLOCKED);
-                }
-                throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
+            if (walked++ > maxDays) throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
+            if (!availableDays.contains(date.getDayOfWeek())) { date = date.plusDays(1); continue; }
+            if (regularDays == supplementEvery) {
+                supplements.add(date); regularDays = 0; date = date.plusDays(1); continue;
             }
-            if (!availableDays.contains(cursor.getDayOfWeek()) || blockedDates.contains(cursor)) {
-                cursor = cursor.plusDays(1); daysWalked++; continue;
+            int remaining = capacity;
+            int order = 1;
+            boolean placed = false;
+            while (pending != null && (!placed || pending.getAllocatedMinutes() <= remaining)) {
+                regular.add(new AllocatedItem(pending, date, pending.getAllocatedMinutes(), order++));
+                remaining -= pending.getAllocatedMinutes();
+                placed = true;
+                pending = iterator.hasNext() ? iterator.next() : null;
             }
-            if (regularDaysSinceSupplement == supplementEveryRegularDays) {
-                supplementDates.add(cursor);
-                regularDaysSinceSupplement = 0;
-                cursor = cursor.plusDays(1); daysWalked++; continue;
-            }
-
-            int remainingMinutes = dailyCapacityMinutes;
-            int orderInDay = 1;
-            boolean placedAnyToday = false;
-            while (pending != null) {
-                int minutes = pending.getAllocatedMinutes();
-                if (!placedAnyToday || minutes <= remainingMinutes) {
-                    result.add(new AllocatedItem(pending, cursor, minutes, orderInDay++));
-                    remainingMinutes -= minutes;
-                    placedAnyToday = true;
-                    pending = iterator.hasNext() ? iterator.next() : null;
-                } else break;
-            }
-            regularDaysSinceSupplement++;
-            cursor = cursor.plusDays(1); daysWalked++;
+            regularDays++;
+            date = date.plusDays(1);
         }
-        // The final whole-day slot protects the last regular day too, rather than leaving it without recovery time.
-        while (regularDaysSinceSupplement > 0 && daysWalked <= maxHorizonDays) {
-            if (availableDays.contains(cursor.getDayOfWeek()) && !blockedDates.contains(cursor)) {
-                supplementDates.add(cursor);
-                break;
-            }
-            cursor = cursor.plusDays(1); daysWalked++;
+        while (regularDays > 0 && walked++ <= maxDays) {
+            if (availableDays.contains(date.getDayOfWeek())) { supplements.add(date); break; }
+            date = date.plusDays(1);
         }
-        return new AllocationPlan(result, supplementDates);
+        return new AllocationPlan(regular, supplements);
     }
 
-    public List<AllocatedItem> allocate(
-            List<LearningTask> orderedTasks,
-            LocalDate earliestStart,
-            Set<DayOfWeek> availableDays,
-            int dailyCapacityMinutes,
-            int maxHorizonDays
-    ) {
-        List<AllocatedItem> result = new ArrayList<>();
-        Iterator<LearningTask> iterator = orderedTasks.iterator();
-        LearningTask pending = iterator.hasNext() ? iterator.next() : null;
-
-        LocalDate cursor = earliestStart;
-        int daysWalked = 0;
-        while (pending != null) {
-            if (daysWalked > maxHorizonDays) {
-                throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
-            }
-            if (!availableDays.contains(cursor.getDayOfWeek())) {
-                cursor = cursor.plusDays(1);
-                daysWalked++;
-                continue;
-            }
-
-            int remainingMinutes = dailyCapacityMinutes;
-            int orderInDay = 1;
-            boolean placedAnyToday = false;
-            while (pending != null) {
-                int minutes = pending.getAllocatedMinutes();
-                // 하루 첫 태스크는 남은 시간을 초과하더라도 반드시 배정한다.
-                // 그렇지 않으면 dailyCapacityMinutes보다 긴 단일 태스크가 영원히 배정되지 못한다.
-                if (!placedAnyToday || minutes <= remainingMinutes) {
-                    result.add(new AllocatedItem(pending, cursor, minutes, orderInDay));
-                    orderInDay++;
-                    remainingMinutes -= minutes;
-                    placedAnyToday = true;
-                    pending = iterator.hasNext() ? iterator.next() : null;
-                } else {
-                    break;
-                }
-            }
-            cursor = cursor.plusDays(1);
-            daysWalked++;
-        }
-        return result;
+    public List<AllocatedItem> allocate(List<LearningTask> tasks, LocalDate start, Set<DayOfWeek> availableDays,
+            int capacity, int maxDays) {
+        return allocateWithSupplementDays(tasks, start, availableDays, capacity, Integer.MAX_VALUE, maxDays).regularItems();
     }
 }
