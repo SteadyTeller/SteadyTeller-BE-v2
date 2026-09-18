@@ -21,6 +21,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
+import com.steadyteller.backend.membergoal.entity.MemberGoal;
+import java.util.Optional;
+import org.springframework.test.util.ReflectionTestUtils;
+
 @ExtendWith(MockitoExtension.class)
 class AvailabilityServiceTest {
 
@@ -30,8 +35,26 @@ class AvailabilityServiceTest {
     @Mock
     private AvailabilityRepository availabilityRepository;
 
+    @Mock
+    private MemberGoalRepository memberGoalRepository;
+
     @InjectMocks
     private AvailabilityService availabilityService;
+
+    private MemberGoal createTestGoal(Long memberId) {
+        MemberGoal goal = MemberGoal.builder()
+                .memberId(memberId)
+                .title("Test Goal")
+                .startDate(java.time.LocalDate.now())
+                .targetDate(java.time.LocalDate.now().plusMonths(1))
+                .currentLevel("Beginner")
+                .dailyStudyHours(1)
+                .availableDays(List.of("MON"))
+                .focusArea("Test")
+                .build();
+        ReflectionTestUtils.setField(goal, "id", 1L);
+        return goal;
+    }
 
     @Test
     void createAvailabilityUsesEnabledDefaultAndCalculatesMinutes() {
@@ -43,12 +66,13 @@ class AvailabilityServiceTest {
                 .endTime(LocalTime.of(21, 0))
                 .build();
         given(memberService.getActiveMember(memberId)).willReturn(member);
-        given(availabilityRepository.findAllByMemberIdAndDayOfWeek(memberId, DayOfWeek.MONDAY))
+        given(memberGoalRepository.findById(1L)).willReturn(Optional.of(createTestGoal(memberId)));
+        given(availabilityRepository.findAllByMemberGoalIdAndDayOfWeek(1L, DayOfWeek.MONDAY))
                 .willReturn(List.of());
         given(availabilityRepository.save(any(Availability.class)))
                 .willAnswer(invocation -> invocation.getArgument(0));
 
-        AvailabilityResponse response = availabilityService.createAvailability(memberId, request);
+        AvailabilityResponse response = availabilityService.createAvailability(memberId, 1L, request);
 
         assertThat(response.getAvailableMinutes()).isEqualTo(120);
         assertThat(response.isEnabled()).isTrue();
@@ -73,10 +97,11 @@ class AvailabilityServiceTest {
                 .enabled(true)
                 .build();
         given(memberService.getActiveMember(memberId)).willReturn(member);
-        given(availabilityRepository.findAllByMemberIdAndDayOfWeek(memberId, DayOfWeek.MONDAY))
+        given(memberGoalRepository.findById(1L)).willReturn(Optional.of(createTestGoal(memberId)));
+        given(availabilityRepository.findAllByMemberGoalIdAndDayOfWeek(1L, DayOfWeek.MONDAY))
                 .willReturn(List.of(existing));
 
-        assertThatThrownBy(() -> availabilityService.createAvailability(memberId, request))
+        assertThatThrownBy(() -> availabilityService.createAvailability(memberId, 1L, request))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(MemberErrorCode.AVAILABILITY_OVERLAP);
@@ -90,7 +115,7 @@ class AvailabilityServiceTest {
                 .endTime(LocalTime.of(20, 0))
                 .build();
 
-        assertThatThrownBy(() -> availabilityService.createAvailability(1L, request))
+        assertThatThrownBy(() -> availabilityService.createAvailability(1L, 1L, request))
                 .isInstanceOf(CustomException.class)
                 .extracting("errorCode")
                 .isEqualTo(MemberErrorCode.INVALID_TIME_RANGE);

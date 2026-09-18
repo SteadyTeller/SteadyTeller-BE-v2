@@ -51,8 +51,12 @@ public class Availability extends BaseTimeEntity {
     @Column(nullable = false)
     private boolean enabled;
 
+    @Column(name = "member_goal_id", nullable = false)
+    private Long memberGoalId;
+
     public static Availability create(
             Member member,
+            Long memberGoalId,
             DayOfWeek dayOfWeek,
             LocalTime startTime,
             LocalTime endTime,
@@ -60,6 +64,7 @@ public class Availability extends BaseTimeEntity {
     ) {
         return Availability.builder()
                 .member(member)
+                .memberGoalId(memberGoalId)
                 .dayOfWeek(dayOfWeek)
                 .startTime(startTime)
                 .endTime(endTime)

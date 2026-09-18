@@ -13,6 +13,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
+import com.steadyteller.backend.membergoal.entity.MemberGoal;
+import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -20,22 +24,34 @@ public class AvailabilityService {
 
     private final MemberService memberService;
     private final AvailabilityRepository availabilityRepository;
+    private final MemberGoalRepository memberGoalRepository;
 
-    public List<AvailabilityResponse> getAvailabilities(Long memberId) {
+    private void verifyGoalOwnership(Long memberId, Long memberGoalId) {
+        MemberGoal goal = memberGoalRepository.findById(memberGoalId)
+                .orElseThrow(() -> new CustomException(GoalErrorCode.GOAL_NOT_FOUND));
+        if (!goal.isOwnedBy(memberId)) {
+            throw new CustomException(GoalErrorCode.GOAL_ACCESS_DENIED);
+        }
+    }
+
+    public List<AvailabilityResponse> getAvailabilities(Long memberId, Long memberGoalId) {
         memberService.getActiveMember(memberId);
-        return availabilityRepository.findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(memberId)
+        verifyGoalOwnership(memberId, memberGoalId);
+        return availabilityRepository.findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(memberGoalId)
                 .stream()
                 .map(AvailabilityResponse::from)
                 .toList();
     }
 
     @Transactional
-    public AvailabilityResponse createAvailability(Long memberId, AvailabilityRequest request) {
+    public AvailabilityResponse createAvailability(Long memberId, Long memberGoalId, AvailabilityRequest request) {
         validateTimeRange(request);
         Member member = memberService.getActiveMember(memberId);
-        validateOverlap(memberId, null, request);
+        verifyGoalOwnership(memberId, memberGoalId);
+        validateOverlap(memberGoalId, null, request);
         Availability availability = Availability.create(
                 member,
+                memberGoalId,
                 request.getDayOfWeek(),
                 request.getStartTime(),
                 request.getEndTime(),
@@ -47,13 +63,15 @@ public class AvailabilityService {
     @Transactional
     public AvailabilityResponse updateAvailability(
             Long memberId,
+            Long memberGoalId,
             Long availabilityId,
             AvailabilityRequest request
     ) {
         validateTimeRange(request);
         memberService.getActiveMember(memberId);
-        validateOverlap(memberId, availabilityId, request);
-        Availability availability = getAvailability(memberId, availabilityId);
+        verifyGoalOwnership(memberId, memberGoalId);
+        validateOverlap(memberGoalId, availabilityId, request);
+        Availability availability = getAvailability(memberGoalId, availabilityId);
         availability.update(
                 request.getDayOfWeek(),
                 request.getStartTime(),
@@ -64,13 +82,14 @@ public class AvailabilityService {
     }
 
     @Transactional
-    public void deleteAvailability(Long memberId, Long availabilityId) {
+    public void deleteAvailability(Long memberId, Long memberGoalId, Long availabilityId) {
         memberService.getActiveMember(memberId);
-        availabilityRepository.delete(getAvailability(memberId, availabilityId));
+        verifyGoalOwnership(memberId, memberGoalId);
+        availabilityRepository.delete(getAvailability(memberGoalId, availabilityId));
     }
 
-    private Availability getAvailability(Long memberId, Long availabilityId) {
-        return availabilityRepository.findByIdAndMemberId(availabilityId, memberId)
+    private Availability getAvailability(Long memberGoalId, Long availabilityId) {
+        return availabilityRepository.findByIdAndMemberGoalId(availabilityId, memberGoalId)
                 .orElseThrow(() -> new CustomException(MemberErrorCode.AVAILABILITY_NOT_FOUND));
     }
 
@@ -81,12 +100,12 @@ public class AvailabilityService {
     }
 
     private void validateOverlap(
-            Long memberId,
+            Long memberGoalId,
             Long excludedAvailabilityId,
             AvailabilityRequest request
     ) {
         boolean overlaps = availabilityRepository
-                .findAllByMemberIdAndDayOfWeek(memberId, request.getDayOfWeek())
+                .findAllByMemberGoalIdAndDayOfWeek(memberGoalId, request.getDayOfWeek())
                 .stream()
                 .filter(availability -> !Objects.equals(availability.getId(), excludedAvailabilityId))
                 .anyMatch(availability ->

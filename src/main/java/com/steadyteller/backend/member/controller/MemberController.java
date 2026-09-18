@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -76,19 +77,21 @@ public class MemberController {
 
     @GetMapping("/availabilities")
     public ResponseEntity<ApiResponse<List<AvailabilityResponse>>> getAvailabilities(
-            @AuthenticationPrincipal Long memberId
+            @AuthenticationPrincipal Long memberId,
+            @RequestParam Long goalId
     ) {
-        return ResponseEntity.ok(ApiResponse.success(availabilityService.getAvailabilities(memberId)));
+        return ResponseEntity.ok(ApiResponse.success(availabilityService.getAvailabilities(memberId, goalId)));
     }
 
     @PostMapping("/availabilities")
     public ResponseEntity<ApiResponse<AvailabilityResponse>> createAvailability(
             @AuthenticationPrincipal Long memberId,
+            @RequestParam Long goalId,
             @Valid @RequestBody AvailabilityRequest request
     ) {
         return ResponseEntity.status(201).body(ApiResponse.success(
                 "학습 가능 시간이 등록되었습니다.",
-                availabilityService.createAvailability(memberId, request)
+                availabilityService.createAvailability(memberId, goalId, request)
         ));
     }
 
@@ -96,20 +99,22 @@ public class MemberController {
     public ResponseEntity<ApiResponse<AvailabilityResponse>> updateAvailability(
             @AuthenticationPrincipal Long memberId,
             @PathVariable Long availabilityId,
+            @RequestParam Long goalId,
             @Valid @RequestBody AvailabilityRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.success(
                 "학습 가능 시간이 수정되었습니다.",
-                availabilityService.updateAvailability(memberId, availabilityId, request)
+                availabilityService.updateAvailability(memberId, goalId, availabilityId, request)
         ));
     }
 
     @DeleteMapping("/availabilities/{availabilityId}")
     public ResponseEntity<ApiResponse<Void>> deleteAvailability(
             @AuthenticationPrincipal Long memberId,
+            @RequestParam Long goalId,
             @PathVariable Long availabilityId
     ) {
-        availabilityService.deleteAvailability(memberId, availabilityId);
+        availabilityService.deleteAvailability(memberId, goalId, availabilityId);
         return ResponseEntity.ok(ApiResponse.success("학습 가능 시간이 삭제되었습니다.", null));
     }
 }
