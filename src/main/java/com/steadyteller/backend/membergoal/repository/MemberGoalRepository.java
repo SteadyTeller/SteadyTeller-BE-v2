@@ -16,4 +16,8 @@ public interface MemberGoalRepository extends JpaRepository<MemberGoal, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT g FROM MemberGoal g WHERE g.id = :id")
     Optional<MemberGoal> findByIdForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT g FROM MemberGoal g WHERE g.memberId = :memberId")
+    List<MemberGoal> findByMemberIdForUpdate(@Param("memberId") Long memberId);
 }

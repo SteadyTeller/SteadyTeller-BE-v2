@@ -74,6 +74,15 @@ public class MemberGoalController {
         return ResponseEntity.ok(ApiResponse.success("학습 목표가 수정되었습니다.", response));
     }
 
+    // 학습 목표 종료
+    @PatchMapping("/{goalId}/close")
+    public ResponseEntity<ApiResponse<Void>> closeGoal(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long goalId) {
+        memberGoalService.closeGoal(memberId, goalId);
+        return ResponseEntity.ok(ApiResponse.success("학습 목표가 종료되었습니다.", null));
+    }
+
     // 학습 목표 삭제
     @DeleteMapping("/{goalId}")
     public ResponseEntity<ApiResponse<Void>> deleteGoal(

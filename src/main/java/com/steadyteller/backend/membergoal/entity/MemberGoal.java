@@ -4,6 +4,8 @@ import com.steadyteller.backend.global.common.BaseTimeEntity;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -62,6 +64,10 @@ public class MemberGoal extends BaseTimeEntity {
     @Column(nullable = false)
     private String focusArea;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private GoalStatus status = GoalStatus.IN_PROGRESS;
+
     @Builder
     public MemberGoal(Long memberId, String title, LocalDate startDate, LocalDate targetDate,
                        String currentLevel, Integer dailyStudyHours, Integer breakMinutes, List<String> availableDays, String focusArea) {
@@ -96,5 +102,9 @@ public class MemberGoal extends BaseTimeEntity {
         if (targetDate.isAfter(this.targetDate)) {
             this.targetDate = targetDate;
         }
+    }
+
+    public void close() {
+        this.status = GoalStatus.CLOSED;
     }
 }

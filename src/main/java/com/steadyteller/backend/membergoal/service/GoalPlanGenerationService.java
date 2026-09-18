@@ -37,10 +37,9 @@ public class GoalPlanGenerationService {
                 request.goal().dailyStudyHours(), availableDays, request.goal().focusArea(), request.goal().breakMinutes());
         MemberGoalResponseDto goal = memberGoalService.createGoal(memberId, goalRequest);
 
-        // Availability is currently a member preference in the domain, so this endpoint replaces the preference atomically.
-        availabilityRepository.deleteAll(availabilityRepository.findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(memberId));
-        for (var availability : request.availabilities()) availabilityService.createAvailability(memberId, availability);
-        List<Availability> savedWindows = availabilityRepository.findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(memberId);
+        availabilityRepository.deleteAll(availabilityRepository.findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.id()));
+        for (var availability : request.availabilities()) availabilityService.createAvailability(memberId, goal.id(), availability);
+        List<Availability> savedWindows = availabilityRepository.findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.id());
 
         learningTaskService.generateTasksForAvailability(memberId, goal.id(), savedWindows);
         List<LearningTaskResponseDto> tasks = learningTaskService.confirmTasks(memberId, goal.id());

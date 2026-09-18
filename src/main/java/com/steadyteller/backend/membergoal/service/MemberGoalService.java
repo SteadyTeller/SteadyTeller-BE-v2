@@ -75,10 +75,20 @@ public class MemberGoalService {
     private void validateGoalRequest(MemberStudyInfoRequestDto request) {
         if (request.targetDate().isBefore(LocalDate.now())
                 || request.startDate().isAfter(request.targetDate())
+                || request.dailyStudyHours() == null
+                || request.dailyStudyHours() <= 0
+                || request.availableDays() == null
+                || request.availableDays().isEmpty()
                 || request.availableDays().stream().anyMatch(day -> !VALID_AVAILABLE_DAYS.contains(day))
                 || request.availableDays().size() != request.availableDays().stream().distinct().count()) {
             throw new CustomException(GlobalErrorCode.INVALID_INPUT_VALUE);
         }
+    }
+
+    @Transactional
+    public void closeGoal(Long memberId, Long goalId) {
+        MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
+        goal.close();
     }
 
     @Transactional
