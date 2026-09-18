@@ -73,7 +73,7 @@ public class MemberGoalService {
     }
 
     private void validateGoalRequest(MemberStudyInfoRequestDto request) {
-        if (request.targetDate().isBefore(LocalDate.now())
+        if (request.targetDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
                 || request.startDate().isAfter(request.targetDate())
                 || request.dailyStudyHours() == null
                 || request.dailyStudyHours() <= 0

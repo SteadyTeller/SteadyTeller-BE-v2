@@ -45,6 +45,7 @@ public class LearningTaskService {
     private final LearningTaskCandidateRepository candidateRepository;
     private final LearningTaskAiService learningTaskAiService;
     private final ScheduleItemRepository scheduleItemRepository;
+    private final com.steadyteller.backend.schedule.repository.ScheduleFailureRepository scheduleFailureRepository;
 
     /**
      * AI 세부 태스크 생성 (설계 명세 2번). 기존에 남아있던 해당 goal의 후보는 새 결과로 교체된다.
@@ -112,7 +113,7 @@ public class LearningTaskService {
         Map<DayOfWeek, Integer> minutesByDay = availabilities.stream().filter(Availability::isEnabled)
                 .collect(java.util.stream.Collectors.groupingBy(Availability::getDayOfWeek,
                         java.util.stream.Collectors.summingInt(Availability::getAvailableMinutes)));
-        LocalDate cursor = goal.getStartDate().isAfter(LocalDate.now()) ? goal.getStartDate() : LocalDate.now();
+        LocalDate cursor = goal.getStartDate().isAfter(LocalDate.now(java.time.ZoneId.of("Asia/Seoul"))) ? goal.getStartDate() : LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
         int total = 0;
         while (!cursor.isAfter(goal.getTargetDate())) {
             total += minutesByDay.getOrDefault(cursor.getDayOfWeek(), 0);
@@ -206,6 +207,7 @@ public class LearningTaskService {
                 item.clearTask();
             }
         });
+        scheduleFailureRepository.deleteByLearningTaskId(taskId);
         learningTaskRepository.delete(task);
     }
 
@@ -249,6 +251,8 @@ public class LearningTaskService {
             }
         }
         
+        java.util.List<Long> taskIds = existingTasks.stream().map(com.steadyteller.backend.learningtask.entity.LearningTask::getId).toList();
+        scheduleFailureRepository.deleteByLearningTaskIdIn(taskIds);
         learningTaskRepository.deleteAll(existingTasks);
         List<LearningTask> saved = learningTaskRepository.saveAll(tasks);
         candidateRepository.deleteByGoalId(goalId);

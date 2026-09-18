@@ -38,7 +38,7 @@ public class GoalPlanGenerationService {
         MemberGoalResponseDto goal = memberGoalService.createGoal(memberId, goalRequest);
 
         availabilityRepository.deleteAll(availabilityRepository.findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.id()));
-        for (var availability : request.availabilities()) availabilityService.createAvailability(memberId, goal.id(), availability);
+        availabilityService.createAvailabilities(memberId, goal.id(), request.availabilities());
         List<Availability> savedWindows = availabilityRepository.findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.id());
 
         learningTaskService.generateTasksForAvailability(memberId, goal.id(), savedWindows);

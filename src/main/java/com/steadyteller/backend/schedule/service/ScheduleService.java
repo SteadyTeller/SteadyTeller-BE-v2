@@ -194,7 +194,7 @@ public class ScheduleService {
         if (newMinutes <= 0 || newMinutes > MAX_ALLOCATED_MINUTES) {
             throw new CustomException(ScheduleErrorCode.INVALID_SCHEDULE_ITEM_MINUTES);
         }
-        if (newDate.isBefore(LocalDate.now())) {
+        if (newDate.isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_IN_PAST);
         }
         Set<DayOfWeek> availableDays = resolveAvailableDays(memberId, goal);
@@ -290,7 +290,7 @@ public class ScheduleService {
         ScheduleItem supplement = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
                 .stream().filter(candidate -> candidate.getKind() == ScheduleItemKind.SUPPLEMENT
                         && candidate.getLearningTaskId() == null && candidate.getStatus() == ScheduleItemStatus.PENDING
-                        && !candidate.getDate().isBefore(LocalDate.now())
+                        && !candidate.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
                         && candidate.getAllocatedMinutes() >= item.getAllocatedMinutes()).findFirst().orElse(null);
         if (supplement == null) {
             return new ScheduleFailureResultDto(failures, false, true, splitRecommended, true,
@@ -313,7 +313,7 @@ public class ScheduleService {
         }
         ScheduleItem destination = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId)
                 .stream().filter(item -> item.getKind() == ScheduleItemKind.SUPPLEMENT
-                        && item.getLearningTaskId() == null && !item.getDate().isBefore(LocalDate.now())
+                        && item.getLearningTaskId() == null && !item.getDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))
                         && item.getAllocatedMinutes() >= source.getAllocatedMinutes()).findFirst()
                 .orElseThrow(() -> new IllegalStateException("No supplement day has enough remaining time."));
         int remainingMinutes = destination.getAllocatedMinutes() - source.getAllocatedMinutes();
@@ -337,7 +337,7 @@ public class ScheduleService {
         }
         
         if (scheduleFailureRepository != null) {
-            scheduleFailureRepository.save(ScheduleFailure.create(itemId, originalLearningTaskId, "USER_DEFERRED", "사용자 직접 미루기", com.steadyteller.backend.schedule.entity.FailureHandlingAction.DEFER_TO_SUPPLEMENT));
+            scheduleFailureRepository.save(ScheduleFailure.create(itemId, originalLearningTaskId, com.steadyteller.backend.schedule.entity.FailureReasonCode.USER_DEFERRED, "사용자 직접 미루기", com.steadyteller.backend.schedule.entity.FailureHandlingAction.DEFER_TO_SUPPLEMENT));
         }
         return ScheduleItemResponseDto.from(destination);
     }
@@ -516,7 +516,7 @@ public class ScheduleService {
     }
 
     private LocalDate earliestStart(MemberGoal goal) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
         return goal.getStartDate().isAfter(today) ? goal.getStartDate() : today;
     }
 

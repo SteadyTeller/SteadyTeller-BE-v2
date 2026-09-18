@@ -29,6 +29,8 @@ class LearningTaskServiceTest {
     @Mock
     private MemberGoalRepository memberGoalRepository;
     @Mock
+    private com.steadyteller.backend.schedule.repository.ScheduleFailureRepository scheduleFailureRepository;
+    @Mock
     private LearningTaskRepository learningTaskRepository;
     @Mock
     private LearningTaskAiService learningTaskAiService;
