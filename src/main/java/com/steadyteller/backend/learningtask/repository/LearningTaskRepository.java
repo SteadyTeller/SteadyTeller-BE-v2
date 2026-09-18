@@ -16,6 +16,8 @@ public interface LearningTaskRepository extends JpaRepository<LearningTask, Long
 
     List<LearningTask> findByGoalIdAndStatus(Long goalId, LearningTaskStatus status);
 
+    List<LearningTask> findByGoalIdAndStatusIn(Long goalId, List<LearningTaskStatus> statuses);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT lt FROM LearningTask lt WHERE lt.goalId = :goalId AND lt.status = :status")
     List<LearningTask> findByGoalIdAndStatusForUpdate(@Param("goalId") Long goalId, @Param("status") LearningTaskStatus status);

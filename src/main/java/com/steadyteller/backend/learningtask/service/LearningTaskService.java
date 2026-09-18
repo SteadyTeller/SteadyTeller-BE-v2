@@ -201,7 +201,11 @@ public class LearningTaskService {
                 .orElseThrow(() -> new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND));
         getOwnedGoalForUpdate(memberId, task.getGoalId());
         List<ScheduleItem> scheduledItems = scheduleItemRepository.findByLearningTaskIdForUpdate(taskId);
-        scheduledItems.forEach(ScheduleItem::clearTask);
+        scheduledItems.forEach(item -> {
+            if (item.getStatus() == com.steadyteller.backend.schedule.entity.ScheduleItemStatus.PENDING) {
+                item.clearTask();
+            }
+        });
         learningTaskRepository.delete(task);
     }
 
@@ -230,8 +234,21 @@ public class LearningTaskService {
                         .build())
                 .toList();
 
-        List<LearningTask> existingTasks = learningTaskRepository.findByGoalIdAndStatus(
-                goalId, LearningTaskStatus.PENDING);
+        List<LearningTask> existingTasks = learningTaskRepository.findByGoalIdAndStatusIn(
+                goalId, List.of(LearningTaskStatus.PENDING, LearningTaskStatus.SCHEDULED));
+        
+        // 스케줄에 이미 배정된(SCHEDULED) 태스크가 삭제될 경우 고아 참조를 방지하기 위해 빈 일정으로 처리한다.
+        for (LearningTask task : existingTasks) {
+            if (task.getStatus() == LearningTaskStatus.SCHEDULED) {
+                List<ScheduleItem> scheduledItems = scheduleItemRepository.findByLearningTaskIdForUpdate(task.getId());
+                scheduledItems.forEach(item -> {
+                    if (item.getStatus() == com.steadyteller.backend.schedule.entity.ScheduleItemStatus.PENDING) {
+                        item.clearTask();
+                    }
+                });
+            }
+        }
+        
         learningTaskRepository.deleteAll(existingTasks);
         List<LearningTask> saved = learningTaskRepository.saveAll(tasks);
         candidateRepository.deleteByGoalId(goalId);

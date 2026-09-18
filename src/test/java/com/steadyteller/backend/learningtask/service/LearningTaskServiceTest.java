@@ -66,7 +66,7 @@ class LearningTaskServiceTest {
 
         given(memberGoalRepository.findByIdForUpdate(10L)).willReturn(Optional.of(goal));
         given(candidateRepository.findByGoalIdOrderByIdAsc(10L)).willReturn(List.of(candidate));
-        given(learningTaskRepository.findByGoalIdAndStatus(10L, LearningTaskStatus.PENDING))
+        given(learningTaskRepository.findByGoalIdAndStatusIn(10L, java.util.List.of(LearningTaskStatus.PENDING, LearningTaskStatus.SCHEDULED)))
                 .willReturn(List.of(existingTask));
 
         learningTaskService.confirmTasks(1L, 10L);
