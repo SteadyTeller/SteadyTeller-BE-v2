@@ -55,4 +55,16 @@ class TimerResultServiceTest {
         assertThatThrownBy(() -> service.save(9L, 2L, 5L, request(UUID.randomUUID(), 32, StudyResult.COMPLETED, null))).isInstanceOf(CustomException.class);
         verifyNoInteractions(repository);
     }
+
+    @Test void historyIsReturnedOnlyAfterOwnershipCheck() {
+        var request = request(UUID.randomUUID(), 32, StudyResult.COMPLETED, null);
+        var stored = TimerResult.create(1L, 2L, 5L, context, request);
+        when(query.findOwnedItem(1L, 2L, 5L)).thenReturn(context);
+        when(repository.findAllByMemberIdAndScheduleIdAndScheduleItemIdOrderByCreatedAtDesc(1L, 2L, 5L))
+            .thenReturn(List.of(stored));
+
+        assertThat(service.findHistory(1L, 2L, 5L)).singleElement()
+            .satisfies(result -> assertThat(result.actualMinutes()).isEqualTo(32));
+        verify(query).findOwnedItem(1L, 2L, 5L);
+    }
 }

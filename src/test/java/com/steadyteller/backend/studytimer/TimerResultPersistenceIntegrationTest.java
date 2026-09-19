@@ -64,6 +64,24 @@ class TimerResultPersistenceIntegrationTest {
         assertThat(timerResultRepository.count()).isZero();
     }
 
+    @Test
+    void readsOnlyOwnedItemHistoryInNewestFirstOrder() {
+        ScheduleItem item = saveItem(1L, 10L, 101L);
+        TimerResultRequest first = new TimerResultRequest(
+                UUID.randomUUID(), 20, StudyResult.FAILED, "OTHER", "첫 시도", "1단계", "2단계");
+        TimerResultRequest second = new TimerResultRequest(
+                UUID.randomUUID(), 35, StudyResult.COMPLETED, null, null, "2단계", null);
+        timerResultService.save(1L, item.getSchedule().getId(), item.getId(), first);
+        timerResultService.save(1L, item.getSchedule().getId(), item.getId(), second);
+
+        var history = timerResultService.findHistory(1L, item.getSchedule().getId(), item.getId());
+
+        assertThat(history).hasSize(2);
+        assertThat(history).extracting(TimerResultResponse::actualMinutes).containsExactly(35, 20);
+        assertThatThrownBy(() -> timerResultService.findHistory(
+                2L, item.getSchedule().getId(), item.getId())).isInstanceOf(CustomException.class);
+    }
+
     private ScheduleItem saveItem(Long memberId, Long goalId, Long learningTaskId) {
         LocalDate date = LocalDate.of(2026, 9, 19);
         Schedule schedule = scheduleRepository.save(Schedule.create(memberId, goalId, date, date));

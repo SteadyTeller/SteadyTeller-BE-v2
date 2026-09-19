@@ -3,6 +3,7 @@ import com.steadyteller.backend.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.List;
 import java.util.Set;
 @Service
 @RequiredArgsConstructor
@@ -26,5 +27,14 @@ public class TimerResultService {
         }
         // One row per attempt: repeated failures remain separate records; scheduling state belongs to Schedule.
         return repository.saveAndFlush(TimerResult.create(memberId, scheduleId, itemId, context, request));
+    }
+
+    @Transactional(readOnly = true)
+    public List<TimerResultResponse> findHistory(Long memberId, Long scheduleId, Long itemId) {
+        scheduleQuery.findOwnedItem(memberId, scheduleId, itemId);
+        return repository.findAllByMemberIdAndScheduleIdAndScheduleItemIdOrderByCreatedAtDesc(
+                memberId, scheduleId, itemId).stream()
+            .map(TimerResultResponse::from)
+            .toList();
     }
 }

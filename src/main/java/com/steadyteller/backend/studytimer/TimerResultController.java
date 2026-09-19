@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import java.util.List;
 @RestController
 @RequiredArgsConstructor
 public class TimerResultController {
@@ -15,5 +16,12 @@ public class TimerResultController {
                                                  @Valid @RequestBody TimerResultRequest request) {
         TimerResult result = service.save(memberId, scheduleId, itemId, request);
         return ApiResponse.success(TimerResultResponse.from(result));
+    }
+
+    @GetMapping("/api/v1/schedules/{scheduleId}/items/{itemId}/timer-results")
+    public ApiResponse<List<TimerResultResponse>> findHistory(@AuthenticationPrincipal Long memberId,
+                                                              @PathVariable Long scheduleId,
+                                                              @PathVariable Long itemId) {
+        return ApiResponse.success(service.findHistory(memberId, scheduleId, itemId));
     }
 }
