@@ -23,50 +23,36 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/goals")
 @RequiredArgsConstructor
 public class MemberGoalController {
-
     private final MemberGoalService memberGoalService;
 
-    // 학습 목표 설정: 새 MemberGoal 생성
     @PostMapping
     public ResponseEntity<ApiResponse<MemberGoalResponseDto>> createGoal(
-            @AuthenticationPrincipal Long memberId,
-            @Valid @RequestBody MemberStudyInfoRequestDto request) {
-        MemberGoalResponseDto response = memberGoalService.createGoal(memberId, request);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("학습 목표가 생성되었습니다.", response));
+            @AuthenticationPrincipal Long memberId, @Valid @RequestBody MemberStudyInfoRequestDto request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(memberGoalService.createGoal(memberId, request)));
     }
 
-    // 내가 가진 학습 목표 전체 목록 조회
     @GetMapping
-    public ResponseEntity<ApiResponse<List<MemberGoalResponseDto>>> getGoals(
-            @AuthenticationPrincipal Long memberId) {
+    public ResponseEntity<ApiResponse<List<MemberGoalResponseDto>>> getGoals(@AuthenticationPrincipal Long memberId) {
         return ResponseEntity.ok(ApiResponse.success(memberGoalService.getGoals(memberId)));
     }
 
-    // 학습 목표 단건 조회
     @GetMapping("/{goalId}")
     public ResponseEntity<ApiResponse<MemberGoalResponseDto>> getGoal(
-            @AuthenticationPrincipal Long memberId,
-            @PathVariable Long goalId) {
+            @AuthenticationPrincipal Long memberId, @PathVariable Long goalId) {
         return ResponseEntity.ok(ApiResponse.success(memberGoalService.getGoal(memberId, goalId)));
     }
 
-    // 학습 목표 수정
     @PatchMapping("/{goalId}")
     public ResponseEntity<ApiResponse<MemberGoalResponseDto>> updateGoal(
-            @AuthenticationPrincipal Long memberId,
-            @PathVariable Long goalId,
+            @AuthenticationPrincipal Long memberId, @PathVariable Long goalId,
             @Valid @RequestBody MemberStudyInfoRequestDto request) {
-        MemberGoalResponseDto response = memberGoalService.updateGoal(memberId, goalId, request);
-        return ResponseEntity.ok(ApiResponse.success("학습 목표가 수정되었습니다.", response));
+        return ResponseEntity.ok(ApiResponse.success(memberGoalService.updateGoal(memberId, goalId, request)));
     }
 
-    // 학습 목표 삭제
     @DeleteMapping("/{goalId}")
     public ResponseEntity<ApiResponse<Void>> deleteGoal(
-            @AuthenticationPrincipal Long memberId,
-            @PathVariable Long goalId) {
+            @AuthenticationPrincipal Long memberId, @PathVariable Long goalId) {
         memberGoalService.deleteGoal(memberId, goalId);
-        return ResponseEntity.ok(ApiResponse.success("학습 목표가 삭제되었습니다.", null));
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 }

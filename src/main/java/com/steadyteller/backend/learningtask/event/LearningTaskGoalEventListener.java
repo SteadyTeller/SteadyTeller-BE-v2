@@ -2,6 +2,7 @@ package com.steadyteller.backend.learningtask.event;
 
 import com.steadyteller.backend.learningtask.repository.LearningTaskCandidateRepository;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
+import com.steadyteller.backend.schedule.repository.ScheduleFailureRepository;
 import com.steadyteller.backend.membergoal.event.MemberGoalDeletedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
@@ -17,11 +18,14 @@ public class LearningTaskGoalEventListener {
 
     private final LearningTaskCandidateRepository candidateRepository;
     private final LearningTaskRepository learningTaskRepository;
+    private final ScheduleFailureRepository scheduleFailureRepository;
 
     @EventListener
     @Transactional
     public void handleGoalDeleted(MemberGoalDeletedEvent event) {
         candidateRepository.deleteByGoalId(event.goalId());
+        learningTaskRepository.findByGoalIdOrderByIdAsc(event.goalId())
+                .forEach(task -> scheduleFailureRepository.deleteByLearningTaskId(task.getId()));
         learningTaskRepository.deleteByGoalId(event.goalId());
     }
 }

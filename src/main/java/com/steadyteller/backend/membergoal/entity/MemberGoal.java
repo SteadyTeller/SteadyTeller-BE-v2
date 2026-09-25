@@ -5,6 +5,8 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -18,72 +20,35 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 회원의 학습 목표. 한 회원이 여러 개의 MemberGoal을 가질 수 있다 (1:N).
- * memberId는 JWT에서 추출한 값을 그대로 저장하며, Member 엔티티는 별도 도메인(다른 팀원 구현)이므로
- * 이 프로젝트 내에서는 연관관계(FK 매핑) 없이 순수 컬럼으로만 참조한다.
- */
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "member_goal")
 public class MemberGoal extends BaseTimeEntity {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false)
-    private Long memberId;
-
-    @Column(nullable = false)
-    private String title;
-
-    @Column(nullable = false)
-    private LocalDate startDate;
-
-    @Column(nullable = false)
-    private LocalDate targetDate;
-
-    @Column(nullable = false)
-    private String currentLevel;
-
-    @Column(nullable = false)
-    private Integer dailyStudyHours;
-
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+    @Column(nullable = false) private Long memberId;
+    @Column(nullable = false) private String title;
+    @Column(nullable = false) private LocalDate startDate;
+    @Column(nullable = false) private LocalDate targetDate;
+    @Column(nullable = false) private String currentLevel;
     @ElementCollection
-    @CollectionTable(name = "member_goal_available_days", joinColumns = @JoinColumn(name = "member_goal_id"))
-    @Column(name = "day_of_week", nullable = false)
-    private List<String> availableDays = new ArrayList<>();
-
-    @Column(nullable = false)
-    private String focusArea;
+    @CollectionTable(name = "member_goal_must_study_topics", joinColumns = @JoinColumn(name = "member_goal_id"))
+    @Column(name = "topic", nullable = false)
+    private List<String> mustStudyTopics = new ArrayList<>();
+    @Enumerated(EnumType.STRING) @Column(nullable = false) private GoalStatus status = GoalStatus.IN_PROGRESS;
+    @Column(nullable = false) private boolean taskGenerationLocked;
 
     @Builder
     public MemberGoal(Long memberId, String title, LocalDate startDate, LocalDate targetDate,
-                       String currentLevel, Integer dailyStudyHours, List<String> availableDays, String focusArea) {
-        this.memberId = memberId;
-        this.title = title;
-        this.startDate = startDate;
-        this.targetDate = targetDate;
-        this.currentLevel = currentLevel;
-        this.dailyStudyHours = dailyStudyHours;
-        this.availableDays = availableDays;
-        this.focusArea = focusArea;
+                      String currentLevel, List<String> mustStudyTopics) {
+        this.memberId = memberId; this.title = title; this.startDate = startDate; this.targetDate = targetDate;
+        this.currentLevel = currentLevel; this.mustStudyTopics = new ArrayList<>(mustStudyTopics);
     }
-
     public void update(String title, LocalDate startDate, LocalDate targetDate, String currentLevel,
-                        Integer dailyStudyHours, List<String> availableDays, String focusArea) {
-        this.title = title;
-        this.startDate = startDate;
-        this.targetDate = targetDate;
-        this.currentLevel = currentLevel;
-        this.dailyStudyHours = dailyStudyHours;
-        this.availableDays = availableDays;
-        this.focusArea = focusArea;
+                       List<String> mustStudyTopics) {
+        this.title = title; this.startDate = startDate; this.targetDate = targetDate; this.currentLevel = currentLevel;
+        this.mustStudyTopics = new ArrayList<>(mustStudyTopics);
     }
-
-    public boolean isOwnedBy(Long memberId) {
-        return this.memberId.equals(memberId);
-    }
+    public boolean isOwnedBy(Long memberId) { return this.memberId.equals(memberId); }
+    public void lockTaskGeneration() { this.taskGenerationLocked = true; }
 }

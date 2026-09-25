@@ -55,4 +55,6 @@ public class Schedule extends BaseTimeEntity {
                 .endDate(endDate)
                 .build();
     }
+
+    public void updatePeriod(LocalDate startDate, LocalDate endDate) { this.startDate = startDate; this.endDate = endDate; }
 }

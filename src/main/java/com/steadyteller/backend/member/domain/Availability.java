@@ -26,53 +26,23 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class Availability extends BaseTimeEntity {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "member_id", nullable = false) private Member member;
+    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 10) private DayOfWeek dayOfWeek;
+    @Column(nullable = false) private LocalTime startTime;
+    @Column(nullable = false) private LocalTime endTime;
+    @Column(nullable = false) private int availableMinutes;
+    @Column(nullable = false) private boolean enabled;
+    @Column(name = "member_goal_id", nullable = false) private Long memberGoalId;
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
-    private DayOfWeek dayOfWeek;
-
-    @Column(nullable = false)
-    private LocalTime startTime;
-
-    @Column(nullable = false)
-    private LocalTime endTime;
-
-    @Column(nullable = false)
-    private int availableMinutes;
-
-    @Column(nullable = false)
-    private boolean enabled;
-
-    public static Availability create(
-            Member member,
-            DayOfWeek dayOfWeek,
-            LocalTime startTime,
-            LocalTime endTime,
-            boolean enabled
-    ) {
-        return Availability.builder()
-                .member(member)
-                .dayOfWeek(dayOfWeek)
-                .startTime(startTime)
-                .endTime(endTime)
-                .availableMinutes((int) Duration.between(startTime, endTime).toMinutes())
-                .enabled(enabled)
-                .build();
+    public static Availability create(Member member, Long memberGoalId, DayOfWeek dayOfWeek,
+                                      LocalTime startTime, LocalTime endTime, boolean enabled) {
+        return Availability.builder().member(member).memberGoalId(memberGoalId).dayOfWeek(dayOfWeek)
+                .startTime(startTime).endTime(endTime).availableMinutes(calculateAvailableMinutes(startTime, endTime))
+                .enabled(enabled).build();
     }
-
-    public void update(DayOfWeek dayOfWeek, LocalTime startTime, LocalTime endTime, boolean enabled) {
-        this.dayOfWeek = dayOfWeek;
-        this.startTime = startTime;
-        this.endTime = endTime;
-        this.availableMinutes = (int) Duration.between(startTime, endTime).toMinutes();
-        this.enabled = enabled;
+    private static int calculateAvailableMinutes(LocalTime startTime, LocalTime endTime) {
+        int minutes = (int) Duration.between(startTime, endTime).toMinutes();
+        return endTime.equals(LocalTime.of(23, 59)) ? minutes + 1 : minutes;
     }
 }

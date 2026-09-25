@@ -8,9 +8,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AvailabilityRepository extends JpaRepository<Availability, Long> {
 
-    List<Availability> findAllByMemberIdOrderByDayOfWeekAscStartTimeAsc(Long memberId);
+    List<Availability> findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(Long memberGoalId);
 
-    List<Availability> findAllByMemberIdAndDayOfWeek(Long memberId, DayOfWeek dayOfWeek);
+    List<Availability> findAllByMemberGoalIdAndDayOfWeek(Long memberGoalId, DayOfWeek dayOfWeek);
 
-    Optional<Availability> findByIdAndMemberId(Long id, Long memberId);
+    Optional<Availability> findByIdAndMemberGoalId(Long id, Long memberGoalId);
+
+    void deleteByMemberGoalId(Long memberGoalId);
 }

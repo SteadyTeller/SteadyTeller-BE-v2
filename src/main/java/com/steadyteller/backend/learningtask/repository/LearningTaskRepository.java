@@ -20,6 +20,10 @@ public interface LearningTaskRepository extends JpaRepository<LearningTask, Long
     @Query("SELECT lt FROM LearningTask lt WHERE lt.goalId = :goalId AND lt.status = :status")
     List<LearningTask> findByGoalIdAndStatusForUpdate(@Param("goalId") Long goalId, @Param("status") LearningTaskStatus status);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT lt FROM LearningTask lt WHERE lt.goalId=:goalId AND lt.status=:status AND NOT EXISTS (SELECT 1 FROM ScheduleItem si WHERE si.learningTaskId=lt.id)")
+    List<LearningTask> findUnscheduledByGoalIdAndStatusForUpdate(@Param("goalId") Long goalId, @Param("status") LearningTaskStatus status);
+
     @Modifying
     @Query("DELETE FROM LearningTask lt WHERE lt.goalId = :goalId")
     void deleteByGoalId(@Param("goalId") Long goalId);

@@ -2,9 +2,11 @@ package com.steadyteller.backend.learningtask.controller;
 
 import com.steadyteller.backend.global.common.ApiResponse;
 import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateRequestDto;
+import com.steadyteller.backend.learningtask.dto.CandidateAvailabilityStatusResponseDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskCandidateResponseDto;
 import com.steadyteller.backend.learningtask.dto.LearningTaskResponseDto;
 import com.steadyteller.backend.learningtask.service.LearningTaskService;
+import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,14 @@ public class LearningTaskController {
         return ResponseEntity.ok(ApiResponse.success(learningTaskService.getCandidates(memberId, goalId)));
     }
 
+    @GetMapping("/goals/{goalId}/tasks/capacity-status")
+    public ResponseEntity<ApiResponse<CandidateAvailabilityStatusResponseDto>> getCandidateCapacityStatus(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long goalId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                learningTaskService.getCandidateAvailabilityStatus(memberId, goalId)));
+    }
+
     // 확정된 태스크 목록 조회. 확정 뒤 후보 목록은 비워지므로, 할 일 목록 화면은 이 API를 사용한다.
     @GetMapping("/goals/{goalId}/tasks/confirmed")
     public ResponseEntity<ApiResponse<List<LearningTaskResponseDto>>> getConfirmedTasks(
@@ -86,11 +96,19 @@ public class LearningTaskController {
     }
 
     // 최종 승인: 현재 후보 목록을 LearningTask로 일괄 저장 (status=PENDING) 후 후보 캐시 비움
+    @DeleteMapping("/confirmed-tasks/{taskId}")
+    public ResponseEntity<ApiResponse<Void>> deleteConfirmedTask(
+            @AuthenticationPrincipal Long memberId,
+            @PathVariable Long taskId) {
+        learningTaskService.deleteConfirmedTask(memberId, taskId);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     @PostMapping("/goals/{goalId}/tasks/confirm")
-    public ResponseEntity<ApiResponse<List<LearningTaskResponseDto>>> confirmTasks(
+    public ResponseEntity<ApiResponse<ScheduleResponseDto>> confirmTasks(
             @AuthenticationPrincipal Long memberId,
             @PathVariable Long goalId) {
-        List<LearningTaskResponseDto> response = learningTaskService.confirmTasks(memberId, goalId);
+        ScheduleResponseDto response = learningTaskService.confirmTasksAndGenerateSchedule(memberId, goalId);
         return ResponseEntity.ok(ApiResponse.success("학습 태스크가 확정되었습니다.", response));
     }
 }

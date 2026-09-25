@@ -5,20 +5,27 @@ import com.steadyteller.backend.learningtask.entity.LearningTask;
 import com.steadyteller.backend.learningtask.entity.LearningTaskStatus;
 import com.steadyteller.backend.learningtask.repository.LearningTaskRepository;
 import com.steadyteller.backend.membergoal.entity.MemberGoal;
+import com.steadyteller.backend.member.domain.Availability;
+import com.steadyteller.backend.member.repository.AvailabilityRepository;
 import com.steadyteller.backend.membergoal.exception.GoalErrorCode;
 import com.steadyteller.backend.membergoal.repository.MemberGoalRepository;
 import com.steadyteller.backend.schedule.dto.ScheduleItemResponseDto;
+import com.steadyteller.backend.schedule.dto.ScheduleItemFailureRequestDto;
+import com.steadyteller.backend.schedule.dto.ScheduleFailureResultDto;
 import com.steadyteller.backend.schedule.dto.ScheduleItemUpdateRequestDto;
 import com.steadyteller.backend.schedule.dto.ScheduleResponseDto;
 import com.steadyteller.backend.schedule.dto.ScheduleSummaryDto;
 import com.steadyteller.backend.schedule.entity.Schedule;
 import com.steadyteller.backend.schedule.entity.ScheduleItem;
 import com.steadyteller.backend.schedule.entity.ScheduleItemStatus;
+import com.steadyteller.backend.schedule.entity.ScheduleFailure;
 import com.steadyteller.backend.schedule.exception.ScheduleErrorCode;
 import com.steadyteller.backend.schedule.repository.ScheduleItemRepository;
 import com.steadyteller.backend.schedule.repository.ScheduleRepository;
+import com.steadyteller.backend.schedule.repository.ScheduleFailureRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -50,53 +57,39 @@ public class ScheduleService {
     private final LearningTaskRepository learningTaskRepository;
     private final ScheduleRepository scheduleRepository;
     private final ScheduleItemRepository scheduleItemRepository;
-    private final ScheduleAiService scheduleAiService;
+    private final ScheduleFailureRepository scheduleFailureRepository;
+    private final AvailabilityRepository availabilityRepository;
 
     @Transactional
     public ScheduleResponseDto generateSchedule(Long memberId, Long goalId) {
         MemberGoal goal = getOwnedGoalForUpdate(memberId, goalId);
         log.info("Schedule generation started: memberId={}, goalId={}, title={}", memberId, goalId, goal.getTitle());
         List<LearningTask> confirmedTasks =
-                learningTaskRepository.findByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
+                learningTaskRepository.findUnscheduledByGoalIdAndStatusForUpdate(goalId, LearningTaskStatus.PENDING);
         if (confirmedTasks.isEmpty()) {
             log.warn("Schedule generation rejected: no confirmed pending tasks. goalId={}", goalId);
             throw new CustomException(ScheduleErrorCode.NO_CONFIRMED_TASKS);
         }
         validateAllocatedMinutes(confirmedTasks);
 
-        Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
-        int dailyCapacityMinutes = calculateDailyCapacityMinutes(goal);
         LocalDate earliestStart = earliestStart(goal);
-
-        List<ScheduleAllocator.AllocatedItem> allocations = scheduleAiService.generateSchedule(
-                goal, confirmedTasks, earliestStart, availableDays, dailyCapacityMinutes, MAX_HORIZON_DAYS
-        );
-        log.info("Schedule allocation completed: goalId={}, taskCount={}, allocationCount={}, dailyCapacityMinutes={}",
-                goalId, confirmedTasks.size(), allocations.size(), dailyCapacityMinutes);
-
+        List<Availability> availabilities = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId);
+        List<ScheduleAllocator.TimeSlotAllocation> plannedAllocations = new ScheduleAllocator().allocateByWindows(
+                confirmedTasks, earliestStart, goal.getTargetDate(), availabilities);
+        log.info("Schedule allocation completed: goalId={}, taskCount={}, allocationCount={}",
+                goalId, confirmedTasks.size(), plannedAllocations.size());
         Schedule schedule = scheduleRepository.save(Schedule.create(
                 memberId,
                 goalId,
-                allocations.get(0).date(),
-                allocations.get(allocations.size() - 1).date()
+                plannedAllocations.getFirst().date(),
+                plannedAllocations.getLast().date()
         ));
 
-        List<ScheduleItem> items = allocations.stream()
-                .map(allocation -> ScheduleItem.create(
-                        schedule,
-                        allocation.task().getId(),
-                        allocation.task().getTitle(),
-                        allocation.date(),
-                        allocation.date().getDayOfWeek(),
-                        allocation.allocatedMinutes(),
-                        allocation.orderInDay()
-                ))
-                .toList();
+        List<ScheduleItem> items = createRegularItems(schedule, plannedAllocations);
         scheduleItemRepository.saveAll(items);
-
-        for (LearningTask task : confirmedTasks) {
-            task.markAsScheduled();
-        }
+        schedule.updatePeriod(schedule.getStartDate(), items.stream().map(ScheduleItem::getDate)
+                .max(LocalDate::compareTo).orElse(schedule.getEndDate()));
 
         log.info("Schedule generation completed: scheduleId={}, goalId={}, itemCount={}, startDate={}, endDate={}",
                 schedule.getId(), goalId, items.size(), schedule.getStartDate(), schedule.getEndDate());
@@ -122,17 +115,11 @@ public class ScheduleService {
     public void deleteSchedule(Long memberId, Long scheduleId) {
         Schedule schedule = getOwnedSchedule(memberId, scheduleId);
         List<ScheduleItem> items = scheduleItemRepository.findByScheduleIdOrderByDateAscOrderIndexAscForUpdate(scheduleId);
-        List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId).toList();
-        if (!taskIds.isEmpty()) {
-            List<LearningTask> tasks = learningTaskRepository.findAllById(taskIds);
-            for (LearningTask task : tasks) {
-                if (task.getStatus() == LearningTaskStatus.SCHEDULED) {
-                    task.markAsPending();
-                }
-            }
-        }
+        List<Long> taskIds = items.stream().map(ScheduleItem::getLearningTaskId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
         scheduleItemRepository.deleteAll(items);
         scheduleItemRepository.flush();
+        synchronizeTaskStatuses(taskIds);
         scheduleRepository.delete(schedule);
     }
 
@@ -161,13 +148,13 @@ public class ScheduleService {
 
         LocalDate newDate = request.date();
         int newMinutes = request.allocatedMinutes() != null ? request.allocatedMinutes() : target.getAllocatedMinutes();
-        if (newMinutes <= 0) {
+        if (newMinutes <= 0 || newMinutes > MAX_ALLOCATED_MINUTES) {
             throw new CustomException(ScheduleErrorCode.INVALID_SCHEDULE_ITEM_MINUTES);
         }
-        if (newDate.isBefore(LocalDate.now())) {
+        if (newDate.isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Seoul")))) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_IN_PAST);
         }
-        Set<DayOfWeek> availableDays = parseAvailableDays(goal.getAvailableDays());
+        Set<DayOfWeek> availableDays = resolveAvailableDays(memberId, goal);
         if (!availableDays.contains(newDate.getDayOfWeek())) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_DATE_NOT_AVAILABLE);
         }
@@ -177,7 +164,7 @@ public class ScheduleService {
                 .filter(item -> !item.getId().equals(itemId) && item.getDate().equals(newDate))
                 .toList();
         int existingMinutesOnNewDate = othersOnNewDate.stream().mapToInt(ScheduleItem::getAllocatedMinutes).sum();
-        int dailyCapacityMinutes = calculateDailyCapacityMinutes(goal);
+        int dailyCapacityMinutes = calculateDailyCapacityMinutes(memberId, goal, resolveAvailableDays(memberId, goal));
         // 그 날짜의 유일한 항목이 되는 경우는 하루 한도를 넘어도 허용한다 (ScheduleAllocator와 동일한 예외 규칙).
         if (!othersOnNewDate.isEmpty() && existingMinutesOnNewDate + newMinutes > dailyCapacityMinutes) {
             throw new CustomException(ScheduleErrorCode.SCHEDULE_ITEM_CAPACITY_EXCEEDED);
@@ -202,6 +189,7 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.start();
+        synchronizeTaskStatus(item.getLearningTaskId());
         return ScheduleItemResponseDto.from(item);
     }
 
@@ -216,6 +204,7 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.finish();
+        synchronizeTaskStatus(item.getLearningTaskId());
         return ScheduleItemResponseDto.from(item);
     }
 
@@ -229,7 +218,75 @@ public class ScheduleService {
         getOwnedSchedule(memberId, scheduleId);
         ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
         item.revertCompletion();
+        synchronizeTaskStatus(item.getLearningTaskId());
         return ScheduleItemResponseDto.from(item);
+    }
+
+    @Transactional
+    public ScheduleFailureResultDto failScheduleItem(Long memberId, Long scheduleId, Long itemId,
+                                                      ScheduleItemFailureRequestDto request) {
+        getOwnedSchedule(memberId, scheduleId);
+        ScheduleItem item = getOwnedScheduleItemForUpdate(scheduleId, itemId);
+        if (item.getLearningTaskId() == null || item.getStatus() == ScheduleItemStatus.FINISHED) {
+            throw new IllegalArgumentException("Completed schedule items cannot fail.");
+        }
+        if (item.getStatus() == ScheduleItemStatus.FAILED) {
+            int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
+            return new ScheduleFailureResultDto(failures, "이미 실패 처리된 일정입니다.");
+        }
+        item.fail();
+        scheduleFailureRepository.save(ScheduleFailure.create(itemId, item.getLearningTaskId(), request.reasonCode(),
+                request.reasonDetail()));
+        int failures = Math.toIntExact(scheduleFailureRepository.countByLearningTaskId(item.getLearningTaskId()));
+        synchronizeTaskStatus(item.getLearningTaskId());
+        return new ScheduleFailureResultDto(failures, "일정 항목을 실패 처리했습니다.");
+    }
+
+    private void assignTimeRanges(Long goalId, List<ScheduleItem> items) {
+        java.util.Map<LocalDate, List<ScheduleItem>> byDate = items.stream().collect(
+                Collectors.groupingBy(ScheduleItem::getDate, java.util.TreeMap::new, Collectors.toList()));
+        for (List<ScheduleItem> dayItems : byDate.values()) {
+            List<ScheduleItem> orderedItems = dayItems.stream()
+                    .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList();
+            int order = 1;
+            for (ScheduleItem item : orderedItems) item.updateOrderIndex(order++);
+        }
+        java.util.Map<java.time.DayOfWeek, List<Availability>> availabilityByDay = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId).stream().filter(Availability::isEnabled)
+                .collect(Collectors.groupingBy(Availability::getDayOfWeek));
+        for (List<ScheduleItem> dayItems : byDate.values()) {
+            LocalDate date = dayItems.getFirst().getDate();
+            List<Availability> windows = availabilityByDay.getOrDefault(date.getDayOfWeek(), List.of());
+            if (windows.isEmpty()) continue;
+            int windowIndex = 0; LocalTime cursor = windows.getFirst().getStartTime();
+            for (ScheduleItem item : items.stream().filter(candidate -> candidate.getDate().equals(date))
+                    .sorted(Comparator.comparingInt(ScheduleItem::getOrderIndex)).toList()) {
+                int minutes = item.getAllocatedMinutes();
+                while (windowIndex < windows.size() && !fitsInWindow(cursor, minutes, windows.get(windowIndex).getEndTime())) {
+                    windowIndex++; if (windowIndex < windows.size()) cursor = windows.get(windowIndex).getStartTime();
+                }
+                if (windowIndex >= windows.size()) throw new CustomException(ScheduleErrorCode.SCHEDULE_GENERATION_FAILED);
+                item.assignTimeRange(cursor, cursor.plusMinutes(minutes));
+                cursor = cursor.plusMinutes(minutes);
+            }
+        }
+    }
+
+    private List<ScheduleItem> createRegularItems(Schedule schedule,
+                                                   List<ScheduleAllocator.TimeSlotAllocation> allocations) {
+        List<ScheduleItem> items = new ArrayList<>();
+        for (ScheduleAllocator.TimeSlotAllocation allocation : allocations) {
+            items.add(ScheduleItem.create(schedule, allocation.task().getId(), allocation.task().getTitle(),
+                    allocation.date(), allocation.date().getDayOfWeek(), allocation.allocatedMinutes(), allocation.orderInDay()));
+            items.getLast().assignTimeRange(allocation.startTime(), allocation.endTime());
+        }
+        return items;
+    }
+
+    private boolean fitsInWindow(LocalTime start, int minutes, LocalTime end) {
+        int startMinute = start.getHour() * 60 + start.getMinute();
+        int endExclusiveMinute = end.equals(LocalTime.of(23, 59)) ? 1440 : end.getHour() * 60 + end.getMinute();
+        return startMinute + minutes <= endExclusiveMinute;
     }
 
     private ScheduleItem getOwnedScheduleItemForUpdate(Long scheduleId, Long itemId) {
@@ -292,41 +349,95 @@ public class ScheduleService {
     }
 
     private LocalDate earliestStart(MemberGoal goal) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
         return goal.getStartDate().isAfter(today) ? goal.getStartDate() : today;
     }
 
-    private Set<DayOfWeek> parseAvailableDays(List<String> availableDays) {
-        if (availableDays == null || availableDays.isEmpty()) {
-            throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
-        }
-        Set<DayOfWeek> parsed = new LinkedHashSet<>();
-        for (String raw : availableDays) {
-            parsed.add(toDayOfWeek(raw));
-        }
-        return parsed;
+    /** Time windows are the sole availability source for the planner. */
+    private int calculateDailyCapacityMinutes(Long memberId, MemberGoal goal, Set<DayOfWeek> availableDays) {
+        java.util.Map<DayOfWeek, Integer> minutesByDay = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.getId()).stream()
+                .filter(Availability::isEnabled)
+                .collect(Collectors.groupingBy(Availability::getDayOfWeek,
+                        Collectors.summingInt(Availability::getAvailableMinutes)));
+        int windowCapacity = availableDays.stream().map(minutesByDay::get)
+                .filter(java.util.Objects::nonNull).min(Integer::compareTo).orElse(0);
+        if (windowCapacity > 0) return windowCapacity;
+        throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
     }
 
-    private DayOfWeek toDayOfWeek(String raw) {
-        if (raw == null) {
-            throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
-        }
-        return switch (raw.trim().toUpperCase()) {
-            case "MON" -> DayOfWeek.MONDAY;
-            case "TUE" -> DayOfWeek.TUESDAY;
-            case "WED" -> DayOfWeek.WEDNESDAY;
-            case "THU" -> DayOfWeek.THURSDAY;
-            case "FRI" -> DayOfWeek.FRIDAY;
-            case "SAT" -> DayOfWeek.SATURDAY;
-            case "SUN" -> DayOfWeek.SUNDAY;
-            default -> throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
-        };
+    private Set<DayOfWeek> resolveAvailableDays(Long memberId, MemberGoal goal) {
+        Set<DayOfWeek> daysWithWindows = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goal.getId()).stream()
+                .filter(Availability::isEnabled).map(Availability::getDayOfWeek)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!daysWithWindows.isEmpty()) return daysWithWindows;
+        throw new CustomException(ScheduleErrorCode.INVALID_AVAILABLE_DAYS);
     }
 
-    private int calculateDailyCapacityMinutes(MemberGoal goal) {
-        if (goal.getDailyStudyHours() == null || goal.getDailyStudyHours() <= 0) {
-            throw new CustomException(ScheduleErrorCode.INVALID_DAILY_STUDY_HOURS);
+    private void recalculateTimeRangesForDate(Long goalId, java.time.LocalDate date, List<ScheduleItem> allItems) {
+        if (availabilityRepository == null) return;
+        List<com.steadyteller.backend.member.domain.Availability> windows = availabilityRepository
+                .findAllByMemberGoalIdOrderByDayOfWeekAscStartTimeAsc(goalId).stream()
+                .filter(com.steadyteller.backend.member.domain.Availability::isEnabled)
+                .filter(a -> a.getDayOfWeek() == date.getDayOfWeek())
+                .toList();
+        if (windows.isEmpty()) return;
+
+        int windowIndex = 0;
+        java.time.LocalTime cursor = windows.get(0).getStartTime();
+
+        List<ScheduleItem> itemsOnDate = allItems.stream()
+                .filter(item -> item.getDate().equals(date))
+                .sorted(java.util.Comparator.comparingInt(ScheduleItem::getOrderIndex))
+                .toList();
+                
+        for (ScheduleItem item : itemsOnDate) {
+            int minutes = item.getAllocatedMinutes();
+            while (windowIndex < windows.size()) {
+                if (fitsInWindow(cursor, minutes, windows.get(windowIndex).getEndTime())) break;
+                java.time.LocalTime wStart = windows.get(windowIndex).getStartTime();
+                java.time.LocalTime wEnd = windows.get(windowIndex).getEndTime();
+                int startMin = wStart.getHour() * 60 + wStart.getMinute();
+                int endMin = wEnd.equals(java.time.LocalTime.of(23, 59)) ? 1440 : wEnd.getHour() * 60 + wEnd.getMinute();
+                if (minutes > (endMin - startMin)) break;
+                windowIndex++;
+                if (windowIndex < windows.size()) cursor = windows.get(windowIndex).getStartTime();
+            }
+            if (windowIndex >= windows.size()) windowIndex = windows.size() - 1;
+            
+            int startM = cursor.getHour() * 60 + cursor.getMinute();
+            int endM = Math.min(1439, startM + minutes);
+            int eh = endM / 60; if (eh == 24) eh = 23;
+            int em = endM % 60; if (endM == 1439) em = 59;
+            java.time.LocalTime calculatedEnd = java.time.LocalTime.of(eh, em);
+            item.assignTimeRange(cursor, calculatedEnd);
+            cursor = calculatedEnd;
         }
-        return goal.getDailyStudyHours() * 60;
+    }
+
+    private void synchronizeTaskStatuses(List<Long> taskIds) {
+        taskIds.stream().filter(java.util.Objects::nonNull).distinct().forEach(this::synchronizeTaskStatus);
+    }
+
+    /** Derives a task's progress exclusively from the schedule items currently assigned to it. */
+    private void synchronizeTaskStatus(Long taskId) {
+        if (taskId == null) {
+            return;
+        }
+        learningTaskRepository.findById(taskId).ifPresent(task -> {
+            List<ScheduleItem> items = scheduleItemRepository.findByLearningTaskIdOrderByDateAscOrderIndexAsc(taskId);
+            LearningTaskStatus status;
+            if (!items.isEmpty() && items.stream().allMatch(item -> item.getStatus() == ScheduleItemStatus.FINISHED)) {
+                status = LearningTaskStatus.FINISHED;
+            } else if (items.stream().anyMatch(item -> item.getStatus() == ScheduleItemStatus.IN_PROGRESS)) {
+                status = LearningTaskStatus.IN_PROGRESS;
+            } else if (items.stream().anyMatch(item -> item.getStatus() == ScheduleItemStatus.FAILED)) {
+                status = LearningTaskStatus.FAILED;
+            } else {
+                status = LearningTaskStatus.PENDING;
+            }
+            task.updateStatus(status);
+        });
     }
 }
