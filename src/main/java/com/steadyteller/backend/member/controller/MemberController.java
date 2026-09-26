@@ -3,6 +3,7 @@ package com.steadyteller.backend.member.controller;
 import com.steadyteller.backend.global.common.ApiResponse;
 import com.steadyteller.backend.member.dto.AvailabilityReplaceRequest;
 import com.steadyteller.backend.member.dto.AvailabilityResponse;
+import com.steadyteller.backend.member.dto.EditableAvailabilityDaysResponse;
 import com.steadyteller.backend.member.dto.LearningProfileResponse;
 import com.steadyteller.backend.member.dto.LearningProfileUpdateRequest;
 import com.steadyteller.backend.member.dto.MemberResponse;
@@ -64,6 +65,12 @@ public class MemberController {
     public ResponseEntity<ApiResponse<List<AvailabilityResponse>>> getAvailabilities(
             @AuthenticationPrincipal Long memberId, @RequestParam Long goalId) {
         return ResponseEntity.ok(ApiResponse.success(availabilityService.getAvailabilities(memberId, goalId)));
+    }
+
+    @GetMapping("/availabilities/editable-days")
+    public ResponseEntity<ApiResponse<EditableAvailabilityDaysResponse>> getEditableAvailabilityDays(
+            @AuthenticationPrincipal Long memberId, @RequestParam Long goalId) {
+        return ResponseEntity.ok(ApiResponse.success(availabilityService.getEditableDays(memberId, goalId)));
     }
 
     @PutMapping("/availabilities")
