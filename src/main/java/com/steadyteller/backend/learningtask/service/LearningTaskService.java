@@ -77,6 +77,7 @@ public class LearningTaskService {
         List<LearningTaskCandidate> newCandidates = aiResults.stream()
                 .map(result -> LearningTaskCandidate.builder()
                         .goalId(goalId)
+                        .memberId(memberId)
                         .title(result.title())
                         .category(result.category())
                         .subject(result.subject())
@@ -146,6 +147,7 @@ public class LearningTaskService {
 
         LearningTaskCandidate candidate = LearningTaskCandidate.builder()
                 .goalId(goalId)
+                .memberId(memberId)
                 .title(request.title())
                 .category(request.category())
                 .subject(request.subject())
@@ -204,7 +206,7 @@ public class LearningTaskService {
             throw new CustomException(LearningTaskErrorCode.CANDIDATE_NOT_FOUND);
         }
         if (!candidateAvailabilityStatus(goal, goalId).isWithinAvailability()) {
-            throw new CustomException(LearningTaskErrorCode.PLAN_EXCEEDS_AVAILABLE_TIME);
+            throw new CustomException(LearningTaskErrorCode.PLAN_CANT_GENERATE_WITHIN_AVAILABLE_TIME);
         }
         List<LearningTask> tasks = candidates.stream()
                 .map(candidate -> LearningTask.builder()
